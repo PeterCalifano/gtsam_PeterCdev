@@ -10,10 +10,10 @@ sudo apt-get install python-is-python3 # NEED TO ADD IF "not installed"
 pip install pyparsing numpy 
 
 buildpath="build"
-if [ -d "$buildpath" ]; then
-mkdir build
+if ! [ -d $buildpath ]; then
+    mkdir build
 else
-echo "build directory exists, skipping creation..."
+    echo "build directory exists, skipping creation..."
 fi
 
 # Change to build folder
