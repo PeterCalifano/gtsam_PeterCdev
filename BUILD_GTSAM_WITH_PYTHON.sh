@@ -24,8 +24,7 @@ cd build
 # Generate makefiles
 cmake   -DCMAKE_BUILD_TYPE=Release \
         -DGTSAM_BUILD_UNSTABLE:OPTION=ON \
-        -DGTSAM_BUILD_PYTHON=ON \ 
-        -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON .. 
+        -DGTSAM_BUILD_PYTHON=ON -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON .. 
 
 # Build and install (system-wide)
 make check
