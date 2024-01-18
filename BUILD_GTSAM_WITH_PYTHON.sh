@@ -4,27 +4,32 @@
 
 # Install dependencies
 sudo apt-get update
-sudo apt-get install libboost-all-dev cmake -y
-sudo apt-get install python3-pip -y # NEED TO ADD IF "not installed"
-sudo apt-get install python-is-python3 # NEED TO ADD IF "not installed"
+sudo apt-get install libboost-all-dev cmake libtbb-dev -y
+# NEED TO ADD IF "not installed" for the following:
+sudo apt-get install python3-pip -y 
+sudo apt-get install python-is-python3 
 pip install pyparsing numpy 
+sudo apt-get install libeigen3-dev 
+
 
 buildpath="build"
 if ! [ -d $buildpath ]; then
     mkdir build
+    cd build
 else
-    echo "build directory exists, skipping creation..."
+    echo "build directory exists, skipping creation, cleaning... "
+    cd build 
+    make clean
 fi
-
-# Change to build folder
-cd build
 
 # ADD check to see if in build else throw error
 
 # Generate makefiles
-cmake   -DCMAKE_BUILD_TYPE=Release \
-        -DGTSAM_BUILD_UNSTABLE:OPTION=ON \
-        -DGTSAM_BUILD_PYTHON=ON -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON .. 
+cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DGTSAM_BUILD_UNSTABLE:OPTION=ON -DGTSAM_BUILD_CONVENIENCE_LIBRARIES:OPTION=ON \
+        -DGTSAM_BUILD_PYTHON=ON -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
+        -DGTSAM_WITH_TBB =ON \
+        -DGTSAM_WITH_EIGEN_MKL=OFF .. 
 
 # Build and install (system-wide)
 make check
