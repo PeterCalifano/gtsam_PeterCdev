@@ -5,6 +5,8 @@
 # Install dependencies
 sudo apt-get update
 sudo apt-get install libboost-all-dev cmake -y
+sudo apt-get install python3-pip -y # NEED TO ADD IF "not installed"
+sudo apt-get install python-is-python3 # NEED TO ADD IF "not installed"
 pip install pyparsing numpy 
 
 if test -d "build"; then
