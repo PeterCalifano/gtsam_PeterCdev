@@ -9,7 +9,8 @@ sudo apt-get install python3-pip -y # NEED TO ADD IF "not installed"
 sudo apt-get install python-is-python3 # NEED TO ADD IF "not installed"
 pip install pyparsing numpy 
 
-if test -d "build"; then
+buildpath=build
+if [ -d "$buildpath" ]; then
 mkdir build
 else
 echo "build directory exists, skipping creation..."
@@ -19,11 +20,10 @@ fi
 cd build
 
 # Generate makefiles
-cmake -DCMAKE_BUILD_TYPE=Release \
-    -DGTSAM_BUILD_UNSTABLE:OPTION=ON \
-    -DGTSAM_BUILD_PYTHON=ON \ 
-    -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
-    .. 
+cmake   -DCMAKE_BUILD_TYPE=Release \
+        -DGTSAM_BUILD_UNSTABLE:OPTION=ON \
+        -DGTSAM_BUILD_PYTHON=ON \ 
+        -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON .. 
 
 # Build and install (system-wide)
 make check
