@@ -32,6 +32,6 @@ cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DGTSAM_WITH_EIGEN_MKL=OFF .. 
 
 # Build and install (system-wide)
-make check
-sudo make install
-sudo make python-install
+make check -j4
+sudo make install -j4
+sudo make python-install -j4
