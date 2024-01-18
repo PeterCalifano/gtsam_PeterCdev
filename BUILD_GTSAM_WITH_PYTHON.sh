@@ -9,7 +9,7 @@ sudo apt-get install python3-pip -y # NEED TO ADD IF "not installed"
 sudo apt-get install python-is-python3 # NEED TO ADD IF "not installed"
 pip install pyparsing numpy 
 
-buildpath=build
+buildpath="build"
 if [ -d "$buildpath" ]; then
 mkdir build
 else
@@ -18,6 +18,8 @@ fi
 
 # Change to build folder
 cd build
+
+# ADD check to see if in build else throw error
 
 # Generate makefiles
 cmake   -DCMAKE_BUILD_TYPE=Release \
