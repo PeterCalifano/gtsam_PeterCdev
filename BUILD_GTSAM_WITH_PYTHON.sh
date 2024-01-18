@@ -26,12 +26,12 @@ fi
 
 # Generate makefiles
 cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-        -DGTSAM_BUILD_UNSTABLE:OPTION=ON -DGTSAM_BUILD_CONVENIENCE_LIBRARIES:OPTION=ON \
-        -DGTSAM_BUILD_PYTHON=ON -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
+        -DGTSAM_BUILD_UNSTABLE:OPTION=OFF -DGTSAM_BUILD_CONVENIENCE_LIBRARIES:OPTION=ON \
+        -DGTSAM_BUILD_PYTHON=OFF -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
         -DGTSAM_WITH_TBB=ON \
         -DGTSAM_WITH_EIGEN_MKL=OFF .. 
 
 # Build and install (system-wide)
-make check -j4
+sudo make check -j4
 sudo make install -j4
-sudo make python-install -j4
+#make python-install -j4
