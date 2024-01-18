@@ -7,9 +7,9 @@ sudo apt-get update
 sudo apt-get install libboost-all-dev cmake libtbb-dev -y
 # NEED TO ADD IF "not installed" for the following:
 sudo apt-get install python3-pip -y 
-sudo apt-get install python-is-python3 
+sudo apt-get install python-is-python3 -y
 pip install pyparsing numpy 
-sudo apt-get install libeigen3-dev 
+sudo apt-get install libeigen3-dev -y
 
 
 buildpath="build"
@@ -28,7 +28,7 @@ fi
 cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DGTSAM_BUILD_UNSTABLE:OPTION=ON -DGTSAM_BUILD_CONVENIENCE_LIBRARIES:OPTION=ON \
         -DGTSAM_BUILD_PYTHON=ON -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
-        -DGTSAM_WITH_TBB =ON \
+        -DGTSAM_WITH_TBB=ON \
         -DGTSAM_WITH_EIGEN_MKL=OFF .. 
 
 # Build and install (system-wide)
