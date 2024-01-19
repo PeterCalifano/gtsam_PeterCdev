@@ -1,27 +1,14 @@
 #!bin/bash
-# Script to build gtsam with Python/MATLAB interface in GNU/Linux systems
-# Note: this script assumes to be in the "gtsam" root folder.
-
-# Install dependencies
-sudo apt-get update
-sudo apt-get install libboost-all-dev cmake libtbb-dev -y
-
-# NEED TO ADD IF "not installed" for the following:
-sudo apt-get install python3-pip -y 
-sudo apt-get install python-is-python3 -y
-pip install pyparsing numpy 
-sudo apt-get install libeigen3-dev -y
-
+# Script to re-build gtsam with Python/MATLAB interface in GNU/Linux systems
+# Note: this script assumes to be in the "gtsam" root folder and that GTSAM has been previously installed from source
 
 buildpath="build"
+
 if ! [ -d $buildpath ]; then
-    mkdir build
-    cd build
+    echo "ERROR: NO PREVIOUS BUILD FOUND! EXITING..." >&2
+    exit 1
 else
-    echo "build directory exists, skipping creation, cleaning... "
     cd build 
-    make clean
-fi
 
 # ADD check to see if in build else throw error
 
@@ -37,3 +24,9 @@ cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 sudo make check -j4
 sudo make install -j4
 #make python-install -j4
+
+fi
+
+
+
+
