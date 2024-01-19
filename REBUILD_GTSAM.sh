@@ -18,11 +18,11 @@ cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DGTSAM_BUILD_PYTHON=OFF -DGTSAM_INSTALL_MATLAB_TOOLBOX=ON \
         -DGTSAM_WITH_TBB=ON \
         -DGTSAM_WITH_EIGEN_MKL=OFF \
-        -DCMAKE_VERBOSE_MAKEFILE=ON . 2>&1 | tee CMAKE_OUTPUT_LOG.txt .. 
+        -DCMAKE_VERBOSE_MAKEFILE=ON . |& tee CMAKE_OUTPUT_LOG.txt .. 
 
 # Build and install (system-wide)
-sudo make check -j4
-sudo make install -j4
+sudo make check -j4 |& tee MAKE_CHECK_OUTPUT_LOG.txt
+sudo make install -j4 |& tee MAKE_INSTALL_OUTPUT_LOG.txt
 #make python-install -j4
 
 fi
