@@ -34,6 +34,6 @@ cmake   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_VERBOSE_MAKEFILE=ON . |& tee CMAKE_OUTPUT_LOG.txt .. 
 
 # Build and install (system-wide)
-sudo make check -j4 |& tee MAKE_CHECK_OUTPUT_LOG.txt
-sudo make install -j4 |& tee MAKE_INSTALL_OUTPUT_LOG.txt
+sudo make check -j4 # |& tee MAKE_CHECK_OUTPUT_LOG.txt
+sudo make install -j4 # |& tee MAKE_INSTALL_OUTPUT_LOG.txt
 #make python-install -j4
