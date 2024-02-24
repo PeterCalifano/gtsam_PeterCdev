@@ -11,7 +11,12 @@ VectorXd nonlinearSystem::propagateRK4(double tf, VectorXd x0) {
   bool done = false;
   VectorXd x = x0;  // std::cout << "x(" << t << "): " << x.transpose() << std::endl;
   while (!done) {
-    //  if (tf - h - t > 0) {  dt = h;  } else {  dt = tf - t;  done = true;  }
+    if (tf - h - t > 0) {
+      dt = h;
+    } else {
+      dt = tf - t;
+      done = true;
+    }
     k1 = dt * this->f(x);
     k2 = dt * this->f(x + 0.5 * k1);
     k3 = dt * this->f(x + 0.5 * k2);
