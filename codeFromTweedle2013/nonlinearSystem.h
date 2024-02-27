@@ -15,7 +15,7 @@ class nonlinearSystem {
   double h;
 
  public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  //EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   nonlinearSystem();
   VectorXd propagateRK4(double tf, VectorXd x0);
   VectorXd propagateRK4_adaptive(double tf, VectorXd x0);
