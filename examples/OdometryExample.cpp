@@ -7,6 +7,8 @@
 
  * See LICENSE for the license information
 
+ // Version with comments added by PeterC
+
  * -------------------------------------------------------------------------- */
 
 /**
@@ -24,6 +26,7 @@
 
 // We will use Pose2 variables (x, y, theta) to represent the robot positions
 #include <gtsam/geometry/Pose2.h>
+#include <gtsam/geometry/Pose3.h>
 
 // In GTSAM, measurement functions are represented as 'factors'. Several common factors
 // have been provided with the library for solving robotics/SLAM/Bundle Adjustment problems.
@@ -61,9 +64,9 @@ int main(int argc, char** argv) {
 
   // Add a prior on the first pose, setting it to the origin
   // A prior factor consists of a mean and a noise model (covariance matrix)
-  Pose2 priorMean(0.0, 0.0, 0.0);  // prior at origin
-  auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(0.3, 0.3, 0.1));
-  graph.addPrior(1, priorMean, priorNoise);
+  Pose2 priorMean(0.0, 0.0, 0.0);  // prior at origin --> constraint on the first node
+  auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(0.3, 0.3, 0.1));  // PC: why auto type?
+  graph.addPrior(1, priorMean, priorNoise);  // PC: Add new pose node to the graph with int key 1
 
   // Add odometry factors
   Pose2 odometry(2.0, 0.0, 0.0);
@@ -71,12 +74,18 @@ int main(int argc, char** argv) {
   auto odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
   // Create odometry (Between) factors between consecutive poses
   graph.emplace_shared<BetweenFactor<Pose2> >(1, 2, odometry, odometryNoise);
-  graph.emplace_shared<BetweenFactor<Pose2> >(2, 3, odometry, odometryNoise);
+  // PC: between 1 and 2. It likely uses STL library emplace but for pointers?
+  // Usage of BetweenFactor<node_class> --> add factor between nodes (e.g. poses)
+  graph.emplace_shared<BetweenFactor<Pose2> >(
+      2, 3, odometry, odometryNoise);  // PC: add sample odometry factor between key 2 and key 3
+  // graph.emplace_shared<BetweenFactor<Pose3> >();  // PC: add sample odometry factor between key 2
+  // and key 3
+
   graph.print("\nFactor Graph:\n");  // print
 
   // Create the data structure to hold the initialEstimate estimate to the solution
   // For illustrative purposes, these have been deliberately set to incorrect values
-  Values initial;
+  Values initial;  // PC: create initial guess of the trajectory --> add (x,y,theta) for each node
   initial.insert(1, Pose2(0.5, 0.0, 0.2));
   initial.insert(2, Pose2(2.3, 0.1, -0.2));
   initial.insert(3, Pose2(4.1, 0.1, 0.1));
@@ -84,11 +93,15 @@ int main(int argc, char** argv) {
 
   // optimize using Levenberg-Marquardt optimization
   Values result = LevenbergMarquardtOptimizer(graph, initial).optimize();
+  // PC: Optimize "initial" to get "result"
+  // --> Values is a container for the trajectory nodes values (for all nodes)
   result.print("Final Result:\n");
 
   // Calculate and print marginal covariances for all variables
   cout.precision(2);
-  Marginals marginals(graph, result);
+  Marginals marginals(graph, result); 
+  // PC: Compute marginal covariance for each node (state vector). Extraction uses dot indexing and int key of the node. 
+  // Note that computation using .inverse() method is only performed for the specified int key if requested.
   cout << "x1 covariance:\n" << marginals.marginalCovariance(1) << endl;
   cout << "x2 covariance:\n" << marginals.marginalCovariance(2) << endl;
   cout << "x3 covariance:\n" << marginals.marginalCovariance(3) << endl;

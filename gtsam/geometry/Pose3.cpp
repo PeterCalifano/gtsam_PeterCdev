@@ -167,7 +167,7 @@ Pose3 Pose3::interpolateRt(const Pose3& T, double t) const {
 /* ************************************************************************* */
 /** Modified from Murray94book version (which assumes w and v normalized?) */
 Pose3 Pose3::Expmap(const Vector6& xi, OptionalJacobian<6, 6> Hxi) {
-  if (Hxi) *Hxi = ExpmapDerivative(xi);
+  if (Hxi) *Hxi = ExpmapDerivative(xi);  // What does this line do? by PC
 
   // get angular velocity omega and translational velocity v from twist xi
   Vector3 omega(xi(0), xi(1), xi(2)), v(xi(3), xi(4), xi(5));
