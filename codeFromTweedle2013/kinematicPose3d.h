@@ -103,117 +103,102 @@ class kinematicPose3d {
   Eigen::Vector4d qref() const { return _qref; }
 
   void reset_qref() {
-    193 Eigen::Vector3d a_ = _a;
-    194 Eigen::Vector4d qref_ = _qref;
-    195 _qref = addQuaternionError(a_, qref_);
-    196 _a = Eigen::Vector3d::Zero();
-    197
+    Eigen::Vector3d a_ = _a;
+    Eigen::Vector4d qref_ = _qref;
+    _qref = addQuaternionError(a_, qref_);
+    _a = Eigen::Vector3d::Zero();
   }
-  198 199 Eigen::Vector4d qTotal() const {
-    200 Eigen::Vector3d a_ = _a;
-    201 Eigen::Vector4d qref_ = _qref;
-    202 return addQuaternionError(a_, qref_);
-    203
+  Eigen::Vector4d qTotal() const {
+    Eigen::Vector3d a_ = _a;
+    Eigen::Vector4d qref_ = _qref;
+    return addQuaternionError(a_, qref_);
   };
-  204 205 206 207 kinematicPose3d exmap(const Vector6d& ∆) {
-    208 kinematicPose3d res = *this;
-    209 res._r += ∆.head(3);
-    210 res._a += ∆.tail(3);
-    211 return res;
-    212
+  kinematicPose3d exmap(const Vector6d& ∆) {
+    kinematicPose3d res = *this;
+    res._r += ∆.head(3);
+    res._a += ∆.tail(3);
+    return res;
   }
-  213 214 kinematicPose3d exmap_reset(const Vector6d& ∆) {
-    215 kinematicPose3d res = *this;
-    216 res._r += ∆.head(3);
-    217 res._a += ∆.tail(3);
-    218 res.reset_qref();
-    219 return res;
+  kinematicPose3d exmap_reset(const Vector6d& ∆) {
+    kinematicPose3d res = *this;
+    res._r += ∆.head(3);
+    res._a += ∆.tail(3);
+    res.reset_qref();
+    return res;
   }
-  221 Vector6d vector() const {
-    222 Vector6d tmp;
-    223 tmp << _r, _a;
-    224 return tmp;
-    225
+  Vector6d vector() const {
+    Vector6d tmp;
+    tmp << _r, _a;
+    return tmp;
   }
-  226 227 void set(const Vector6d& v) {
-    228 _r = v.head(3);
-    229 _a = v.tail(3);
-    230
+  void set(const Vector6d& v) {
+    _r = v.head(3);
+    _a = v.tail(3);
   }
-  231 232 void write(std::ostream& out) const {
-    233 out << std::endl << "kinPose3d x: " << x().transpose() << std::endl;
-    234 out << "kinPose3d qref: " << qref().transpose() << std::endl;
-    235 out << std::endl;
-    236
+  void write(std::ostream& out) const {
+    out << std::endl << "kinPose3d x: " << x().transpose() << std::endl;
+    out << "kinPose3d qref: " << qref().transpose() << std::endl;
+    out << std::endl;
   }
-  237 238 239 /** 240 * Convert Pose3 to homogeneous 4x4 transformation matrix. 241 * The returned
-                 matrix is the object coordinate frame in the world 242 * coordinate frame. In other
-                 words it transforms a point in the object 243 * frame to the world frame. 244 * 245
-                 *
-                 @return wTo 246 */
-      247 Eigen::Matrix4d
-      wTo() const {
-    248 /* 249 Eigen::Matrix4d T; 250 Eigen::Vector4d qtot = qTotal(); 251 T.topLeftCorner(3,3) =
-           rotationMatrix(qtot).transpose(); 252 T.col(3).head(3) = _r; 253 T.row(3) << 0., 0.,
-           0., 1.; 254 return T; 255 */
-        256 Eigen::Vector4d qtot = qTotal();
-    257 Eigen::Matrix3d R = rotationMatrix(qtot);
-    258 Eigen::Matrix3d oRw = R;
-    259 Eigen::Vector3d C = -oRw * _r;
-    260 Eigen::Matrix4d T;
-    261 T.topLeftCorner(3, 3) = oRw;
-    262 T.col(3).head(3) = C;
-    263 T.row(3) << 0., 0., 0., 1.;
-    264 return T;
+  /** 240 * Convert Pose3 to homogeneous 4x4 transformation matrix. 241 * The returned
+                matrix is the object coordinate frame in the world 242 * coordinate frame. In other
+                words it transforms a point in the object 243 * frame to the world frame. 244 * 245
+                *
+                @return wTo  */
+  Eigen::Matrix4d wTo() const {
+    /*  Eigen::Matrix4d T;  Eigen::Vector4d qtot = qTotal();  T.topLeftCorner(3,3) =
+           rotationMatrix(qtot).transpose();  T.col(3).head(3) = _r;  T.row(3) << 0., 0.,
+           0., 1.;  return T;  */
+    Eigen::Vector4d qtot = qTotal();
+    Eigen::Matrix3d R = rotationMatrix(qtot);
+    Eigen::Matrix3d oRw = R;
+    Eigen::Vector3d C = -oRw * _r;
+    Eigen::Matrix4d T;
+    T.topLeftCorner(3, 3) = oRw;
+    T.col(3).head(3) = C;
+    T.row(3) << 0., 0., 0., 1.;
+    return T;
   }
-  267 268 /** 269 * Convert Pose3 to homogeneous 4x4 transformation matrix. Avoids inverting wTo.
-             270 * The returned matrix is the world coordinate frame in the object 271 * coordinate
-             frame. In other words it transforms a point in the world 272 * frame to the object
-             frame. 273 * 274 * @return oTw 275 */
-      276 Eigen::Matrix4d
-      oTw() const {
-    277 Eigen::Matrix4d T;
-    278 Eigen::Vector4d qtot = qTotal();
-    279 T.topLeftCorner(3, 3) = rotationMatrix(qtot).transpose();
-    280 T.col(3).head(3) = _r;
-    281 T.row(3) << 0., 0., 0., 1.;
-    282 return T;
-    283 284
+  /* Convert Pose3 to homogeneous 4x4 transformation matrix. Avoids inverting wTo.
+            * The returned matrix is the world coordinate frame in the object * coordinate
+             frame. In other words it transforms a point in the world  * frame to the object
+             frame.  *  * @return oTw  */
+  Eigen::Matrix4d oTw() const {
+    Eigen::Matrix4d T;
+    Eigen::Vector4d qtot = qTotal();
+    T.topLeftCorner(3, 3) = rotationMatrix(qtot).transpose();
+    T.col(3).head(3) = _r;
+    T.row(3) << 0., 0., 0., 1.;
+    return T;
   }
-  285 286 287
 };
-288 289 typedef NodeExmapT<kinematicPose3d> kinematicPose3d_Node;
-290 291 class kinematicPose3d_Factor : public FactorT<kinematicPose3d> {
-  292 public : 293 kinematicPose3d_Node* _pose;
-  294 295 kinematicPose3d_Factor(kinematicPose3d_Node* pose,
-                                 const kinematicPose3d& prior,
-                                 const Noise& noise) 296
-      : FactorT<kinematicPose3d>("kinematicPose3d_Factor", 6, noise, prior),
-        _pose(pose) {
-    297 _nodes.resize(1);
-    298 _nodes[0] = pose;
-    299
+typedef NodeExmapT<kinematicPose3d> kinematicPose3d_Node;
+class kinematicPose3d_Factor : public FactorT<kinematicPose3d> {
+ public:
+  kinematicPose3d_Node* _pose;
+  kinematicPose3d_Factor(kinematicPose3d_Node* pose,
+                         const kinematicPose3d& prior,
+                         const Noise& noise)
+      : FactorT<kinematicPose3d>("kinematicPose3d_Factor", 6, noise, prior), _pose(pose) {
+    _nodes.resize(1);
+    _nodes[0] = pose;
   }
-  300 301 void initialize() {
-    302 if (!_pose->initialized()) {
-      303 kinematicPose3d predict = _measure;
-      304 _pose->init(predict);
-      305
+  void initialize() {
+    if (!_pose->initialized()) {
+      kinematicPose3d predict = _measure;
+      _pose->init(predict);
     }
-    306
   }
   Eigen::VectorXd basic_error(Selector s = ESTIMATE) const {
-    309 310 kinematicPose3d p1 = _pose->value(s);
-    311 Eigen::VectorXd err = p1.vector() - _measure.vector();
-    312 Eigen::Vector4d q1_tot = p1.qTotal();
-    313 Eigen::Vector4d qm_tot = _measure.qTotal();
-    314 Eigen::Vector4d dq = p1.quaternionDivision(q1_tot, qm_tot);
-    315 Eigen::Vector3d da = p1.quaternion2mrp(dq);
-    316 317 err.segment<3>(3) = da;
-    318 319 return err;
-    320
+    kinematicPose3d p1 = _pose->value(s);
+    Eigen::VectorXd err = p1.vector() - _measure.vector();
+    Eigen::Vector4d q1_tot = p1.qTotal();
+    Eigen::Vector4d qm_tot = _measure.qTotal();
+    Eigen::Vector4d dq = p1.quaternionDivision(q1_tot, qm_tot);
+    Eigen::Vector3d da = p1.quaternion2mrp(dq);
+    err.segment<3>(3) = da;
+    return err;
   }
-  321
 };
-322
+
 }  // namespace isam

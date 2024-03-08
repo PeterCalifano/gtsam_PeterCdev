@@ -64,30 +64,55 @@ _r = r;
   95 96 res._r += ∆.block<3, 1>(0, 0);
   97 res._a += ∆.block<3, 1>(3, 0);
   98 99 res.write();
-  100 101  // reset step 102 res._q = addQuaternionError(res._a, res._q); 103 res._a =
-           // Vector3d::Zero(); 104 105 printf("inertial reset\n"); 106 107 return res; 108 } 109
-           // 110 111 void write(std::ostream &out = std::cout) const { 112 out << " " <<
-           // _r.transpose(); 113 out << " " << _q(0) << " " << _q(1) << " " << _q(2) << " " <<
-           // _q(3); 114 out << " " << _a.transpose(); 115 out << std::endl; 116 } 117 118 Vector4d
-           // quaternionMultiplication(Vector4d q1, Vector4d q2) const { 119 //q1 \mult q2 120
-           // Matrix4d qm; 121 Vector4d result; 122 qm << q1(3), q1(2), -q1(1), q1(0), 123 -q1(2),
-           // q1(3), q1(0), q1(1), 124 q1(1), -q1(0), q1(3), q1(2), 125 -q1(0), -q1(1), -q1(2),
-           // q1(3); 126 127 result = qm*q2; 128 result /= result.norm(); 129 130 return result; 131
-           // } 132 133 Matrix3d rotationMatrix(Vector4d q) const {
-      Matrix3d rot;
-  135 136 rot(0, 0) = q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
-  137 rot(0, 1) = 2 * (q(0) * q(1) + q(2) * q(3));
-  138 rot(0, 2) = 2 * (q(0) * q(2) - q(1) * q(3));
-  139 140 rot(1, 0) = 2 * (q(0) * q(1) - q(2) * q(3));
-  141 rot(1, 1) = -q(0) * q(0) + q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
-  142 rot(1, 2) = 2 * (q(2) * q(1) + q(0) * q(3));
-  143 144 rot(2, 0) = 2 * (q(0) * q(2) + q(1) * q(3));
-  145 rot(2, 1) = 2 * (q(2) * q(1) - q(0) * q(3));
-  146 rot(2, 2) = -q(0) * q(0) - q(1) * q(1) + q(2) * q(2) + q(3) * q(3);
-  147 148  // std::cout << "q2rot: " << q << rot << std::endl; 149 return rot; 150 } 151 152 Point3d
-           // toPrincipalFrame(const Point3d& p_m) const { 153 Matrix3d R =
-           // rotationMatrix(addQuaternionError(_a,_q)); 154 Vector3d vecBody = R * (p_m.vector() -
-           // _r); 155 Point3d p_c(vecBody); 156 157 return p_c; 158 } 159 160 Point3d
-           // fromPrincipalFrame(const Point3d& p_m) const { 161 Matrix3d R =
-           // rotationMatrix(addQuaternionError(_a,_q)); 162 Vector3d vecBody = R.transpose() *
-           // p_m.vector() + _r; 163 Point3d p_c(vecBody); 164 165 return p_c; 166 } 167 168 };
+  reset step 102 res._q = addQuaternionError(res._a, res._q);
+  103 res._a = Vector3d::Zero();
+  104 105 printf("inertial reset\n");
+  106 107 return res;
+  108
+}
+109 110 111 void write(std::ostream& out = std::cout) const {
+  112 out << " " << _r.transpose();
+  113 out << " " << _q(0) << " " << _q(1) << " " << _q(2) << " " << _q(3);
+  114 out << " " << _a.transpose();
+  115 out << std::endl;
+  116
+}
+117 118 Vector4d quaternionMultiplication(Vector4d q1, Vector4d q2) const {
+  119  // q1 \mult q2 120
+      Matrix4d qm;
+  121 Vector4d result;
+  122 qm << q1(3), q1(2), -q1(1), q1(0), 123 - q1(2), q1(3), q1(0), q1(1), 124 q1(1), -q1(0), q1(3),
+      q1(2), 125 - q1(0), -q1(1), -q1(2), q1(3);
+  126 127 result = qm * q2;
+  128 result /= result.norm();
+  129 130 return result;
+  131
+}
+132 133 Matrix3d rotationMatrix(Vector4d q) const {
+  Matrix3d rot;
+  rot(0, 0) = q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
+  rot(0, 1) = 2 * (q(0) * q(1) + q(2) * q(3));
+  rot(0, 2) = 2 * (q(0) * q(2) - q(1) * q(3));
+  rot(1, 0) = 2 * (q(0) * q(1) - q(2) * q(3));
+  rot(1, 1) = -q(0) * q(0) + q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
+  rot(1, 2) = 2 * (q(2) * q(1) + q(0) * q(3));
+  rot(2, 0) = 2 * (q(0) * q(2) + q(1) * q(3));
+  rot(2, 1) = 2 * (q(2) * q(1) - q(0) * q(3));
+  rot(2, 2) = -q(0) * q(0) - q(1) * q(1) + q(2) * q(2) + q(3) * q(3);
+  std::cout << "q2rot: " << q << rot << std::endl;
+  return rot;
+}
+Point3d toPrincipalFrame(const Point3d& p_m) const {
+  Matrix3d R = rotationMatrix(addQuaternionError(_a, _q));
+  Vector3d vecBody = R * (p_m.vector() - _r);
+  Point3d p_c(vecBody);
+  return p_c;
+}
+Point3d fromPrincipalFrame(const Point3d& p_m) const {
+  Matrix3d R = rotationMatrix(addQuaternionError(_a, _q));
+  Vector3d vecBody = R.transpose() * p_m.vector() + _r;
+  Point3d p_c(vecBody);
+  return p_c;
+}
+}
+;
