@@ -166,6 +166,8 @@ Pose3 Pose3::interpolateRt(const Pose3& T, double t) const {
 
 /* ************************************************************************* */
 /** Modified from Murray94book version (which assumes w and v normalized?) */
+// Note by PeterC: OptionalJacobian has operator bool() overloaded --> call (Hxi) check if object is not equal to nullptr
+// See header: OptionalJacobian.h
 Pose3 Pose3::Expmap(const Vector6& xi, OptionalJacobian<6, 6> Hxi) {
   if (Hxi) *Hxi = ExpmapDerivative(xi);  // What does this line do? by PC
 
