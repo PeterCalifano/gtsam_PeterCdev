@@ -1,10 +1,12 @@
 #pragma once
-#include < ostream>  #include <
-Eigen / Dense > #include
-    "isam/isam.h"
+#include <Eigen/Dense>
+#include <ostream>
+#include "FactorVariableNoise.h"
+#include "isam/isam.h"
 #include "rigidBodyDynamics.h"
-#include
-    "FactorVariableNoise.h" using namespace Eigen;
+
+using namespace Eigen;  // Bad practice...
+
 namespace isam {
 class dynamicPose3d_NL {
   frend std::ostream& operator<<(std::ostream& out, const dynamicPose3d_NL& p) {
@@ -224,26 +226,24 @@ relinearizations.  */
       // differentiate linear velocity
       new_v = new_r / dt;
       /* Differentiate
-    // quaternion: 271 * dq/dt = (q[k] - q[k-1])/dt = 0.5 O(w[k-1]) q[k-1] 272 * where
+    // quaternion: 271 * dq/dt = (q[k] - q[k-1])/dt = 0.5 O(w[k-1]) q[k-1]  where
     // O(w[k-1]) is an orthonormal quaternion mult matrix for [w1; w2; w3; 0] (i.e.
-    // quaternionMultiplication()) 273 * set q[k-1] = [0;0;0;1] by definition (from a
-    // refererence frame) and solve for w[k-1] gives 274 * w[k-1] = 2 [q1[k]; q2[k];
-    // q3[k]] / dt 275 */
+    // quaternionMultiplication()). Set q[k-1] = [0;0;0;1] by definition (from a
+    // refererence frame) and solve for w[k-1] gives w[k-1] = 2 [q1[k]; q2[k];
+    // q3[k]] / dt */
       new_w = 2 * new_q.head(3) / dt;
 
     } else {
       new_v = Vector3d::Zero();
-       new_w = Vector3d::Zero();
-      
+      new_w = Vector3d::Zero();
     }
-     new_a = Vector3d::Zero();
-      new_x.block<3, 1>(0, 0) = new_r;
-     new_x.block<3, 1>(3, 0) = new_v;
-     new_x.block<3, 1>(6, 0) = new_a;
-     new_x.block<3, 1>(9, 0) = new_w;
-     newPose.rbd.setState(new_x, new_q);
-     return newPose;
-     
+    new_a = Vector3d::Zero();
+    new_x.block<3, 1>(0, 0) = new_r;
+    new_x.block<3, 1>(3, 0) = new_v;
+    new_x.block<3, 1>(6, 0) = new_a;
+    new_x.block<3, 1>(9, 0) = new_w;
+    newPose.rbd.setState(new_x, new_q);
+    return newPose;
   }
 
   dynamicPose3d_NL adjustAttitude(dynamicPose3d_NL& prev) {
@@ -297,39 +297,69 @@ relinearizations.  */
     VectorXd x, xprev;
     Vector4d q, qprev;
     Vector3d a, aprev;
-    // get x's 356 x = rbd.x(); 357 xprev = prev.x(); 358 359 //attitude gets 360 q
-    // = rbd.qTotal(); 361 qprev = prev.qTotal(); 362 363 new_q =
-    // rbd.quaternionMultiplication(q,qprev); 364 365 Matrix3d Rprev =
-    // rbd.rotationMatrix(qprev); 366 new_r = Rprev * x.head(3) + xprev.head(3);
-    // 367 368 new_v = Vector3d::Zero(); 369 new_a = Vector3d::Zero(); 370 new_w =
-    // Vector3d::Zero(); 371 372 new_x.block<3,1>(0,0) = new_r; 373
-    // new_x.block<3,1>(3,0) = new_v; 374 new_x.block<3,1>(6,0) = new_a; 375
-    // new_x.block<3,1>(9,0) = new_w; 376 377 newPose.rbd.setState(new_x, new_q);
-    // 378 return newPose; 379 } 380 381 382 Matrix4d wTo() const { 383 Matrix4d T;
-    // 384 385 //error quaternion is applied 386 Vector4d qtot = rbd.qTotal(); 387
-    // VectorXd x = rbd.x(); 388 T.topLeftCorner(3,3) =
-    // rbd.rotationMatrix(qtot).transpose(); 389 T.col(3).head(3) <<
-    // x.segment<3>(0); 390 T.row(3) << 0., 0., 0., 1.; 391 return T;
+    // get x's
+    x = rbd.x();
+    xprev = prev.x();
+    // attitude gets
+    q = rbd.qTotal();
+    qprev = prev.qTotal();
+    new_q = rbd.quaternionMultiplication(q, qprev);
+    Matrix3d Rprev = rbd.rotationMatrix(qprev);
+    new_r = Rprev * x.head(3) + xprev.head(3);
+    new_v = Vector3d::Zero();
+    new_a = Vector3d::Zero();
+    new_w = Vector3d::Zero();
+    new_x.block<3, 1>(0, 0) = new_r;
+    new_x.block<3, 1>(3, 0) = new_v;
+    new_x.block<3, 1>(6, 0) = new_a;
+    new_x.block<3, 1>(9, 0) = new_w;
+    newPose.rbd.setState(new_x, new_q);
+    return newPose;
+  }
+  Matrix4d wTo() const {
+    Matrix4d T;
+    // error quaternion is applied
+    Vector4d qtot = rbd.qTotal();
+    VectorXd x = rbd.x();
+    T.topLeftCorner(3, 3) = rbd.rotationMatrix(qtot).transpose();
+    T.col(3).head(3) << x.segment<3>(0);
+    T.row(3) << 0., 0., 0., 1.;
+    return T;
   }
   Matrix4d oTw() const {
     Matrix4d T;
     Matrix3d R;
-    // error quaternion is applied 399 Vector4d qtot = rbd.qTotal(); 400 VectorXd x
-    // = rbd.x(); 401 R = rbd.rotationMatrix(qtot); 402 403 T.topLeftCorner(3,3) =
-    // R; 404 T.col(3).head(3) << - R * x.segment<3>(0); 405 T.row(3) << 0., 0.,
-    // 0., 1.; 406 return T; 407 } 408 409 410 Pose3d getPose3d() { 411 return
-    // Pose3d(this->wTo()); //may be wrong: Mar 25, 2013, B.E.T. 412 //return
-    // Pose3d(this->oTw()); 413 } 414 415 Point3dh transform_to_inertial(const
-    // Point3dh& pBody) const{ 416 Vector3d p; 417 p << pBody.x(), pBody.y(),
-    // pBody.z(); 418 Vector4d qtot = rbd.qTotal(); 419 VectorXd x = rbd.x(); 420
-    // Vector3d T = x.head(3); 421 Matrix3d Rt =
-    // rbd.rotationMatrix(qtot).transpose(); 422 423 Vector3d pInertial = Rt*p + T;
-    // 424 425 return Point3dh(pInertial(0), pInertial(1), pInertial(2), 1.0); 426
-    // } 427 428 Point3dh transform_to_body(const Point3dh& pInertial) const{ 429
-    // Vector3d p; 430 p << pInertial.x(), pInertial.y(), pInertial.z(); 431
-    // Vector4d qtot = rbd.qTotal(); 432 VectorXd x = rbd.x(); 433 Vector3d T =
-    // x.head(3); 434 Matrix3d R = rbd.rotationMatrix(qtot); 435 436 Vector3d pBody
-    // = R*(p - T);
+    // error quaternion is applied
+    Vector4d qtot = rbd.qTotal();
+    VectorXd x = rbd.x();
+    R = rbd.rotationMatrix(qtot);
+    T.topLeftCorner(3, 3) = R;
+    T.col(3).head(3) << -R * x.segment<3>(0);
+    T.row(3) << 0., 0., 0., 1.;
+    return T;
+  }
+  Pose3d getPose3d() {
+    return Pose3d(this->wTo());  // may be wrong: Mar 25, 2013, B.E.T. 412 //return
+    Pose3d(this->oTw());
+  }
+  Point3dh transform_to_inertial(const Point3dh& pBody) const {
+    Vector3d p;
+    p << pBody.x(), pBody.y(), pBody.z();
+    Vector4d qtot = rbd.qTotal();
+    VectorXd x = rbd.x();
+    Vector3d T = x.head(3);
+    Matrix3d Rt = rbd.rotationMatrix(qtot).transpose();
+    Vector3d pInertial = Rt * p + T;
+    return Point3dh(pInertial(0), pInertial(1), pInertial(2), 1.0);
+  }
+  Point3dh transform_to_body(const Point3dh& pInertial) const {
+    Vector3d p;
+    p << pInertial.x(), pInertial.y(), pInertial.z();
+    Vector4d qtot = rbd.qTotal();
+    VectorXd x = rbd.x();
+    Vector3d T = x.head(3);
+    Matrix3d R = rbd.rotationMatrix(qtot);
+    Vector3d pBody = R * (p - T);
 
     return Point3dh(pBody(0), pBody(1), pBody(2), 1.0);
   }
