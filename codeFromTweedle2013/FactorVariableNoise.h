@@ -1,5 +1,6 @@
 #pragma once
-#include <isam/Element.h>  #include<isam/Node.h>
+#include <isam/Element.h>  
+#include <isam/Node.h>
 #include <isam/Jacobian.h>
 #include <isam/Noise.h>
 #include <isam/numericalDiff.h>
