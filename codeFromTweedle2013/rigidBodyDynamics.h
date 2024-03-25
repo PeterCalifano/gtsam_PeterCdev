@@ -7,6 +7,7 @@
 
 using namespace Eigen;
 
+// Rigid body dynamics object class
 class rigidBodyDynamics : public nonlinearSystem {
   isam::inertiaRatios _ir;
   Vector4d _qref;
