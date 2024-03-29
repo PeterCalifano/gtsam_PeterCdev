@@ -15,12 +15,15 @@ class nonlinearSystem {
   double h;
 
  public:
-  //EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  nonlinearSystem();
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW  // Eigen MACRO: If you define a structure having members of
+                                   // fixed-size vectorizable Eigen types, you must overload its
+                                   // "operator new" so that it generates 16-bytes-aligned pointers.
+  nonlinearSystem(); 
+  // Integrators methods
   VectorXd propagateRK4(double tf, VectorXd x0);
-  VectorXd propagateRK4_adaptive(double tf, VectorXd x0);
-  void setStepSize(double _h) { h = _h; };
-  virtual VectorXd f(VectorXd x) = 0;
+  VectorXd propagateRK4_adaptive(double tf, VectorXd x0); 
+  void setStepSize(double _h) { h = _h; }; // Setter of integrator step size
+  virtual VectorXd f(VectorXd x) = 0; // Dynamic model as pure virtual (Derived class requires implementation)
 };
 
 #endif

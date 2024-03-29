@@ -1,5 +1,6 @@
 #include "rigidBodyDynamics.h"
 
+// Rigid Body Dynamics constructor
 rigidBodyDynamics::rigidBodyDynamics(isam::inertiaRatios ir, double sigma_v, double sigma_w) {
   _ir = ir;
   _qref << 0, 0, 0, 1;
@@ -10,7 +11,10 @@ rigidBodyDynamics::rigidBodyDynamics(isam::inertiaRatios ir, double sigma_v, dou
   setMassProperties(ir);
   setCovProperties(sigma_v, sigma_w);
 }
+// Setter of Mass properties
 void rigidBodyDynamics::setMassProperties(isam::inertiaRatios ir) { _ir = ir; }
+
+// Setter of Covariance variables
 void rigidBodyDynamics::setCovProperties(double sigma_v, double sigma_w) {
   _sigma_v = sigma_v;
   _sigma_w = sigma_w;
@@ -18,17 +22,23 @@ void rigidBodyDynamics::setCovProperties(double sigma_v, double sigma_w) {
   _Q.block<3, 3>(0, 0) = _sigma_v * _sigma_v * Matrix<double, 3, 3>::Identity();
   _Q.block<3, 3>(3, 3) = _sigma_w * _sigma_w * Matrix<double, 3, 3>::Identity();
 }
+
+// Update of reference quaternion from error state with reset of error state (MRP)?
 void rigidBodyDynamics::reset_qref() {
   Vector3d a_ = _a;
   Vector4d qref_ = _qref;
   _qref = addQuaternionError(a_, qref_);
   _a = Vector3d::Zero();
 }
+
+// Update of global quaternion state without reset of error state (MRP)
 Vector4d rigidBodyDynamics::qTotal() const {
   Vector3d a_ = _a;
   Vector4d qref_ = _qref;
   return addQuaternionError(a_, qref_);
 };
+
+// Dynamic model for the rigid body dynamics + kinematics
 VectorXd rigidBodyDynamics::f(VectorXd x) {
   Vector3d dr, dv, da, dw;
   Matrix<double, 12, 12> lambda, dLambda;
@@ -38,7 +48,7 @@ VectorXd rigidBodyDynamics::f(VectorXd x) {
   Vector3d v = x.segment<3>(3);
   Vector3d a = x.segment<3>(6);
   Vector3d w = x.segment<3>(9);
-  MatrixXd Bw = getBw();
+  MatrixXd Bw = getBw();  // Map of process noise to state space
   Matrix3d J = _ir.getJ();
 
   // Nonlinear State Model \dot x = f(x)
@@ -82,6 +92,8 @@ VectorXd rigidBodyDynamics::f(VectorXd x) {
   dx.segment<78>(12) = vec_dLambda;
   return dx;
 }
+
+// Function to get Skew symmetric matrix
 Matrix3d rigidBodyDynamics::crossProductMat(Vector3d vec) {
   Matrix3d M = Matrix3d::Zero();
   M(0, 1) = -vec(2);
@@ -92,6 +104,7 @@ Matrix3d rigidBodyDynamics::crossProductMat(Vector3d vec) {
   M(2, 1) = vec(0);
   return M;
 }
+// Function to convert a symmetric matrix to a vector
 VectorXd rigidBodyDynamics::symmMat2Vec(Matrix<double, 12, 12> M) {
   VectorXd v(78);
   int count = 0;
@@ -103,6 +116,8 @@ VectorXd rigidBodyDynamics::symmMat2Vec(Matrix<double, 12, 12> M) {
   }
   return v;
 }
+
+// Function to convert a vector to a symmetric matrix
 Matrix<double, 12, 12> rigidBodyDynamics::vec2symmMat(VectorXd v) {
   Matrix<double, 12, 12> M = Matrix<double, 12, 12>::Zero();
   int count = 0;
@@ -115,6 +130,7 @@ Matrix<double, 12, 12> rigidBodyDynamics::vec2symmMat(VectorXd v) {
   }
   return M;
 }
+// State vector x getter
 VectorXd rigidBodyDynamics::x() const {
   VectorXd x(12);
   x.segment<3>(0) = _r;
@@ -123,6 +139,7 @@ VectorXd rigidBodyDynamics::x() const {
   x.segment<3>(9) = _w;
   return x;
 }
+// State vector (x,q) setter (Translation + rotation)
 void rigidBodyDynamics::setState(VectorXd x, Vector4d q) {
   _r = x.segment<3>(0);
   _v = x.segment<3>(3);
@@ -130,12 +147,14 @@ void rigidBodyDynamics::setState(VectorXd x, Vector4d q) {
   _w = x.segment<3>(9);
   _qref = q / q.norm();
 }
+// State vector x setter (Translation)
 void rigidBodyDynamics::setState(VectorXd x) {
   _r = x.segment<3>(0);
   _v = x.segment<3>(3);
   _a = x.segment<3>(6);
   _w = x.segment<3>(9);
 }
+// Conversion function from MRP to quaternion (error state)
 Vector4d rigidBodyDynamics::mrp2quaternion(Vector3d mrp) const {
   Vector4d dq;
   dq << 8 * mrp / (16 + mrp.transpose() * mrp),
@@ -143,6 +162,7 @@ Vector4d rigidBodyDynamics::mrp2quaternion(Vector3d mrp) const {
   dq /= dq.norm();
   return dq;
 }
+// Conversion function from quaternion to MRP
 Vector3d rigidBodyDynamics::quaternion2mrp(Vector4d q) const {
   Vector3d mrp;
   if (q(3) < 0) {
@@ -151,10 +171,12 @@ Vector3d rigidBodyDynamics::quaternion2mrp(Vector4d q) const {
   mrp << 4 * q(0) / (1 + q(3)), 4 * q(1) / (1 + q(3)), 4 * q(2) / (1 + q(3));
   return mrp;
 }
+// Function to merge quaternion error state (from MRP representation) to global quaternion
 Vector4d rigidBodyDynamics::addQuaternionError(Vector3d& mrp, Vector4d& qref) const {
   Vector4d qnew, dq;
   dq = mrp2quaternion(mrp);
   Vector4d qnew1 = quaternionMultiplication(dq, qref);
+  // Return updated quaternion
   if (qnew1.dot(qref) >= 0) {
     return qnew1;
 
@@ -163,6 +185,7 @@ Vector4d rigidBodyDynamics::addQuaternionError(Vector3d& mrp, Vector4d& qref) co
     return qnew2;
   }
 }
+// Function for quaternion multiplications
 Vector4d rigidBodyDynamics::quaternionMultiplication(Vector4d& q1, Vector4d& q2) const {
   // q1 \mult q2
   Matrix4d qm;
@@ -173,12 +196,15 @@ Vector4d rigidBodyDynamics::quaternionMultiplication(Vector4d& q1, Vector4d& q2)
   result /= result.norm();
   return result;
 }
+// Function for quaternion operation q1 x q2^-1
 Vector4d rigidBodyDynamics::quaternionDivision(Vector4d& q1, Vector4d& q2) const {
   Vector4d q2inv;
   q2inv << -q2(0), -q2(1), -q2(2), q2(3);
   Vector4d result = quaternionMultiplication(q1, q2inv);
   return result;
 }
+
+// Function to compute 1st order finite difference approximation of angular velocity
 Vector3d rigidBodyDynamics::diffQuaternion(Vector4d& q, Vector4d& qprev, double dt) const {
   Vector4d dq = (q - qprev) / dt;
   Matrix4d M;
@@ -188,6 +214,7 @@ Vector3d rigidBodyDynamics::diffQuaternion(Vector4d& q, Vector4d& qprev, double 
   Vector3d w = wp.head(3);
   return w;
 }
+// Function to compute DCM from quaternion
 Matrix3d rigidBodyDynamics::rotationMatrix(Vector4d& q) const {
   Matrix3d rot;
   rot(0, 0) = q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
@@ -202,6 +229,7 @@ Matrix3d rigidBodyDynamics::rotationMatrix(Vector4d& q) const {
   rot(2, 2) = -q(0) * q(0) - q(1) * q(1) + q(2) * q(2) + q(3) * q(3);
   return rot;
 }
+// Function to compute quaternion from DCM
 Vector4d rigidBodyDynamics::quaternionFromRot(Matrix3d& R) const {
   Vector4d q;
   double div1, div2, div3, div4;
@@ -247,6 +275,8 @@ Vector4d rigidBodyDynamics::quaternionFromRot(Matrix3d& R) const {
   q /= q.norm();
   return q;
 }
+
+// Function to get map of process noise to state space
 MatrixXd rigidBodyDynamics::getBw() const {
   Matrix<double, 12, 6> Bw;
   Bw = Matrix<double, 12, 6>::Zero();
@@ -254,6 +284,8 @@ MatrixXd rigidBodyDynamics::getBw() const {
   Bw.block<3, 3>(9, 3) = Matrix3d::Identity();
   return Bw;
 }
+
+// Setters of Inerta matrix, ration and uncertainty covariances
 Matrix3d rigidBodyDynamics::getJ() const { return _ir.getJ(); }
 isam::inertiaRatios rigidBodyDynamics::getIR() const { return _ir; }
 void rigidBodyDynamics::setIR(isam::inertiaRatios ir) { _ir = ir; }

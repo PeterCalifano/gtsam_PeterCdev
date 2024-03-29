@@ -12,7 +12,7 @@
 /**
  * @file    VisualISAM2Example.cpp
  * @brief   A visualSLAM example for the structure-from-motion problem on a
- * simulated dataset This version uses iSAM2 to solve the problem incrementally
+ * simulated dataset. This version uses iSAM2 to solve the problem incrementally
  * @author  Duy-Nguyen Ta
  */
 

@@ -158,3 +158,4 @@ int main(int argc, char* argv[]) {
   PrintDuration(durationDLT, nrTrials, "DLT");
   PrintDuration(durationDLTOpt, nrTrials, "DLT_OPT");
 }
+  

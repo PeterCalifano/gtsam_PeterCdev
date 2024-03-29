@@ -1,6 +1,9 @@
 #include "nonlinearSystem.h"
 
-nonlinearSystem::nonlinearSystem() { h = DEFAULT_H; }
+// Class member functions definitions
+nonlinearSystem::nonlinearSystem() { h = DEFAULT_H; } // Defines default integrator step size
+
+// Fixed-step RK4 integrator
 VectorXd nonlinearSystem::propagateRK4(double tf, VectorXd x0) {
   VectorXd k1;
   VectorXd k2;
@@ -28,6 +31,7 @@ VectorXd nonlinearSystem::propagateRK4(double tf, VectorXd x0) {
   return x;
 }
 
+// Adaptive-step RK4 integrator
 VectorXd nonlinearSystem::propagateRK4_adaptive(double tf, VectorXd x0) {
   bool done = false;
   double h_starting = this->h;

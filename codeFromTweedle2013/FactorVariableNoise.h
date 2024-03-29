@@ -1,7 +1,7 @@
 #pragma once
-#include <isam/Element.h>  
-#include <isam/Node.h>
+#include <isam/Element.h> // ACHTUNG: Tweddle did not really use GTSAM, but iSAM (which is now included)
 #include <isam/Jacobian.h>
+#include <isam/Node.h>
 #include <isam/Noise.h>
 #include <isam/numericalDiff.h>
 
@@ -41,7 +41,7 @@ T > class FactorVarNoiseT : public Factor {
     optional modified cost function if (*ptr_cost_func_local) {
       for (int i = 0; i < err.size(); i++) {
         double val = err(i);
-        err(i) = ((val0) ? 1. : (-1.)) * sqrt((*ptr_cost_func_local)(val));
+        err(i) = ((val>=0) ? 1. : (-1.)) * sqrt((*ptr_cost_func_local)(val));
       }
     }
     return err;
