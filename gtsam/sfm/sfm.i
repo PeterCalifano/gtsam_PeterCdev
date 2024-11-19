@@ -23,7 +23,7 @@ virtual class SfmTrack : gtsam::SfmTrack2d {
   SfmTrack();
   SfmTrack(const gtsam::Point3& pt);
   const Point3& point3() const;
-  
+
   Point3 p;
 
   double r;
@@ -37,8 +37,8 @@ virtual class SfmTrack : gtsam::SfmTrack2d {
   bool equals(const gtsam::SfmTrack& expected, double tol) const;
 };
 
-#include <gtsam/nonlinear/Values.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/Values.h>
 #include <gtsam/sfm/SfmData.h>
 class SfmData {
   SfmData();
@@ -75,13 +75,40 @@ bool writeBAL(string filename, gtsam::SfmData& data);
 gtsam::Values initialCamerasEstimate(const gtsam::SfmData& db);
 gtsam::Values initialCamerasAndPointsEstimate(const gtsam::SfmData& db);
 
+#include <gtsam/sfm/TransferFactor.h>
+#include <gtsam/geometry/FundamentalMatrix.h>
+template <F = {gtsam::SimpleFundamentalMatrix, gtsam::FundamentalMatrix}>
+virtual class TransferFactor : gtsam::NoiseModelFactor {
+  TransferFactor(gtsam::EdgeKey edge1, gtsam::EdgeKey edge2,
+                 const std::vector<std::tuple<gtsam::Point2, gtsam::Point2, gtsam::Point2>>& triplets,
+                 const gtsam::noiseModel::Base* model = nullptr);
+};
+
+#include <gtsam/geometry/Cal3_S2.h>
+#include <gtsam/geometry/Cal3f.h>
+#include <gtsam/geometry/Cal3Bundler.h>
+template <K = {gtsam::Cal3_S2, gtsam::Cal3f, gtsam::Cal3Bundler}>
+virtual class EssentialTransferFactor : gtsam::NoiseModelFactor {
+  EssentialTransferFactor(gtsam::EdgeKey edge1, gtsam::EdgeKey edge2,
+                          const std::vector<std::tuple<gtsam::Point2, gtsam::Point2, gtsam::Point2>>& triplets,
+                          const K* calibration,
+                          const gtsam::noiseModel::Base* model = nullptr);
+};
+
+template <K = {gtsam::Cal3_S2, gtsam::Cal3f, gtsam::Cal3Bundler}>
+virtual class EssentialTransferFactorK : gtsam::NoiseModelFactor {
+  EssentialTransferFactorK(gtsam::EdgeKey edge1, gtsam::EdgeKey edge2,
+                          const std::vector<std::tuple<gtsam::Point2, gtsam::Point2, gtsam::Point2>>& triplets,
+                          const gtsam::noiseModel::Base* model = nullptr);
+};
+
 #include <gtsam/sfm/ShonanFactor.h>
 
 virtual class ShonanFactor3 : gtsam::NoiseModelFactor {
   ShonanFactor3(size_t key1, size_t key2, const gtsam::Rot3& R12, size_t p);
   ShonanFactor3(size_t key1, size_t key2, const gtsam::Rot3& R12, size_t p,
                 gtsam::noiseModel::Base* model);
-  Vector evaluateError(const gtsam::SOn& Q1, const gtsam::SOn& Q2);
+  gtsam::Vector evaluateError(const gtsam::SOn& Q1, const gtsam::SOn& Q2);
 };
 
 #include <gtsam/sfm/BinaryMeasurement.h>
@@ -162,23 +189,23 @@ class ShonanAveraging2 {
   gtsam::Rot2 measured(size_t i);
   gtsam::KeyVector keys(size_t i);
 
-  // Matrix API (advanced use, debugging)
-  Matrix denseD() const;
-  Matrix denseQ() const;
-  Matrix denseL() const;
-  // Matrix computeLambda_(Matrix S) const;
-  Matrix computeLambda_(const gtsam::Values& values) const;
-  Matrix computeA_(const gtsam::Values& values) const;
+  // gtsam::Matrix API (advanced use, debugging)
+  gtsam::Matrix denseD() const;
+  gtsam::Matrix denseQ() const;
+  gtsam::Matrix denseL() const;
+  // gtsam::Matrix computeLambda_(gtsam::Matrix S) const;
+  gtsam::Matrix computeLambda_(const gtsam::Values& values) const;
+  gtsam::Matrix computeA_(const gtsam::Values& values) const;
   double computeMinEigenValue(const gtsam::Values& values) const;
   gtsam::Values initializeWithDescent(size_t p, const gtsam::Values& values,
-                                      const Vector& minEigenVector,
+                                      const gtsam::Vector& minEigenVector,
                                       double minEigenValue) const;
 
   // Advanced API
   gtsam::NonlinearFactorGraph buildGraphAt(size_t p) const;
   gtsam::Values initializeRandomlyAt(size_t p) const;
   double costAt(size_t p, const gtsam::Values& values) const;
-  pair<double, Vector> computeMinEigenVector(const gtsam::Values& values) const;
+  pair<double, gtsam::Vector> computeMinEigenVector(const gtsam::Values& values) const;
   bool checkOptimality(const gtsam::Values& values) const;
   gtsam::LevenbergMarquardtOptimizer* createOptimizerAt(
       size_t p, const gtsam::Values& initial);
@@ -212,23 +239,23 @@ class ShonanAveraging3 {
   gtsam::Rot3 measured(size_t i);
   gtsam::KeyVector keys(size_t i);
 
-  // Matrix API (advanced use, debugging)
-  Matrix denseD() const;
-  Matrix denseQ() const;
-  Matrix denseL() const;
-  // Matrix computeLambda_(Matrix S) const;
-  Matrix computeLambda_(const gtsam::Values& values) const;
-  Matrix computeA_(const gtsam::Values& values) const;
+  // gtsam::Matrix API (advanced use, debugging)
+  gtsam::Matrix denseD() const;
+  gtsam::Matrix denseQ() const;
+  gtsam::Matrix denseL() const;
+  // gtsam::Matrix computeLambda_(gtsam::Matrix S) const;
+  gtsam::Matrix computeLambda_(const gtsam::Values& values) const;
+  gtsam::Matrix computeA_(const gtsam::Values& values) const;
   double computeMinEigenValue(const gtsam::Values& values) const;
   gtsam::Values initializeWithDescent(size_t p, const gtsam::Values& values,
-                                      const Vector& minEigenVector,
+                                      const gtsam::Vector& minEigenVector,
                                       double minEigenValue) const;
 
   // Advanced API
   gtsam::NonlinearFactorGraph buildGraphAt(size_t p) const;
   gtsam::Values initializeRandomlyAt(size_t p) const;
   double costAt(size_t p, const gtsam::Values& values) const;
-  pair<double, Vector> computeMinEigenVector(const gtsam::Values& values) const;
+  pair<double, gtsam::Vector> computeMinEigenVector(const gtsam::Values& values) const;
   bool checkOptimality(const gtsam::Values& values) const;
   gtsam::LevenbergMarquardtOptimizer* createOptimizerAt(
       size_t p, const gtsam::Values& initial);
@@ -268,6 +295,8 @@ class MFAS {
 #include <gtsam/sfm/TranslationRecovery.h>
 
 class TranslationRecovery {
+  TranslationRecovery(const gtsam::LevenbergMarquardtParams& lmParams,
+                      const bool use_bilinear_translation_factor);
   TranslationRecovery(const gtsam::LevenbergMarquardtParams& lmParams);
   TranslationRecovery();  // default params.
   void addPrior(const gtsam::BinaryMeasurementsUnit3& relativeTranslations,

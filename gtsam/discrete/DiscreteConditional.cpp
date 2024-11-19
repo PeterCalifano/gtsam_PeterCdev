@@ -235,16 +235,19 @@ DecisionTreeFactor::shared_ptr DiscreteConditional::likelihood(
 }
 
 /* ************************************************************************** */
-size_t DiscreteConditional::argmax() const {
+size_t DiscreteConditional::argmax(const DiscreteValues& parentsValues) const {
+  ADT pFS = choose(parentsValues, true);  // P(F|S=parentsValues)
+
+  // Initialize
   size_t maxValue = 0;
   double maxP = 0;
+  DiscreteValues values = parentsValues;
+
   assert(nrFrontals() == 1);
-  assert(nrParents() == 0);
-  DiscreteValues frontals;
   Key j = firstFrontalKey();
   for (size_t value = 0; value < cardinality(j); value++) {
-    frontals[j] = value;
-    double pValueS = (*this)(frontals);
+    values[j] = value;
+    double pValueS = (*this)(values);
     // Update MPE solution if better
     if (pValueS > maxP) {
       maxP = pValueS;
@@ -256,8 +259,18 @@ size_t DiscreteConditional::argmax() const {
 
 /* ************************************************************************** */
 void DiscreteConditional::sampleInPlace(DiscreteValues* values) const {
-  assert(nrFrontals() == 1);
-  Key j = (firstFrontalKey());
+  // throw if more than one frontal:
+  if (nrFrontals() != 1) {
+    throw std::invalid_argument(
+        "DiscreteConditional::sampleInPlace can only be called on single "
+        "variable conditionals");
+  }
+  Key j = firstFrontalKey();
+  // throw if values already contains j:
+  if (values->count(j) > 0) {
+    throw std::invalid_argument(
+        "DiscreteConditional::sampleInPlace: values already contains j");
+  }
   size_t sampled = sample(*values);  // Sample variable given parents
   (*values)[j] = sampled;            // store result in partial solution
 }
@@ -459,9 +472,13 @@ string DiscreteConditional::html(const KeyFormatter& keyFormatter,
 }
 
 /* ************************************************************************* */
-double DiscreteConditional::evaluate(const HybridValues& x) const{
+double DiscreteConditional::evaluate(const HybridValues& x) const {
   return this->evaluate(x.discrete());
 }
+
+/* ************************************************************************* */
+double DiscreteConditional::negLogConstant() const { return 0.0; }
+
 /* ************************************************************************* */
 
 }  // namespace gtsam

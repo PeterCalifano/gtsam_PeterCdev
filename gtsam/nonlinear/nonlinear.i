@@ -11,6 +11,7 @@ namespace gtsam {
 #include <gtsam/geometry/Cal3_S2.h>
 #include <gtsam/geometry/CalibratedCamera.h>
 #include <gtsam/geometry/EssentialMatrix.h>
+#include <gtsam/geometry/FundamentalMatrix.h>
 #include <gtsam/geometry/PinholeCamera.h>
 #include <gtsam/geometry/Point2.h>
 #include <gtsam/geometry/Point3.h>
@@ -63,7 +64,7 @@ class NonlinearFactorGraph {
   gtsam::KeyVector keyVector() const;
 
   template <T = {double,
-                 Vector,
+                 gtsam::Vector,
                  gtsam::Point2,
                  gtsam::StereoPoint2,
                  gtsam::Point3,
@@ -74,13 +75,20 @@ class NonlinearFactorGraph {
                  gtsam::Pose2,
                  gtsam::Pose3,
                  gtsam::Cal3_S2,
+                 gtsam::Cal3f,
+                 gtsam::Cal3Bundler,
                  gtsam::Cal3Fisheye,
                  gtsam::Cal3Unified,
                  gtsam::CalibratedCamera,
+                 gtsam::EssentialMatrix,
+                 gtsam::FundamentalMatrix,
+                 gtsam::SimpleFundamentalMatrix,
                  gtsam::PinholeCamera<gtsam::Cal3_S2>,
+                 gtsam::PinholeCamera<gtsam::Cal3f>,
                  gtsam::PinholeCamera<gtsam::Cal3Bundler>,
                  gtsam::PinholeCamera<gtsam::Cal3Fisheye>,
                  gtsam::PinholeCamera<gtsam::Cal3Unified>,
+                 gtsam::PinholeCamera<gtsam::CalibratedCamera>,
                  gtsam::imuBias::ConstantBias}>
   void addPrior(size_t key, const T& prior,
                 const gtsam::noiseModel::Base* noiseModel);
@@ -130,8 +138,9 @@ virtual class NonlinearFactor : gtsam::Factor {
 virtual class NoiseModelFactor : gtsam::NonlinearFactor {
   bool equals(const gtsam::NoiseModelFactor& other, double tol) const;
   gtsam::noiseModel::Base* noiseModel() const;
-  Vector unwhitenedError(const gtsam::Values& x) const;
-  Vector whitenedError(const gtsam::Values& x) const;
+  gtsam::NoiseModelFactor* cloneWithNewNoiseModel(gtsam::noiseModel::Base* newNoise) const;
+  gtsam::Vector unwhitenedError(const gtsam::Values& x) const;
+  gtsam::Vector whitenedError(const gtsam::Values& x) const;
 };
 
 #include <gtsam/nonlinear/Marginals.h>
@@ -145,8 +154,8 @@ class Marginals {
 
   void print(string s = "Marginals: ", const gtsam::KeyFormatter& keyFormatter =
                                            gtsam::DefaultKeyFormatter) const;
-  Matrix marginalCovariance(size_t variable) const;
-  Matrix marginalInformation(size_t variable) const;
+  gtsam::Matrix marginalCovariance(size_t variable) const;
+  gtsam::Matrix marginalInformation(size_t variable) const;
   gtsam::JointMarginal jointMarginalCovariance(
       const gtsam::KeyVector& variables) const;
   gtsam::JointMarginal jointMarginalInformation(
@@ -154,8 +163,8 @@ class Marginals {
 };
 
 class JointMarginal {
-  Matrix at(size_t iVariable, size_t jVariable) const;
-  Matrix fullMatrix() const;
+  gtsam::Matrix at(size_t iVariable, size_t jVariable) const;
+  gtsam::Matrix fullMatrix() const;
   void print(string s = "", gtsam::KeyFormatter keyFormatter =
                                 gtsam::DefaultKeyFormatter) const;
 };
@@ -320,6 +329,8 @@ virtual class GncParams {
   enum Verbosity {
     SILENT,
     SUMMARY,
+    MU,
+    WEIGHTS,
     VALUES
   };
 };
@@ -365,10 +376,10 @@ virtual class GncOptimizer {
                const gtsam::Values& initialValues,
                const PARAMS& params);
   void setInlierCostThresholds(const double inth);
-  const Vector& getInlierCostThresholds();
+  const gtsam::Vector& getInlierCostThresholds();
   void setInlierCostThresholdsAtProbability(const double alpha);
-  void setWeights(const Vector w);
-  const Vector& getWeights();
+  void setWeights(const gtsam::Vector w);
+  const gtsam::Vector& getWeights();
   gtsam::Values optimize();
 };
 
@@ -378,17 +389,22 @@ typedef gtsam::GncOptimizer<gtsam::GncParams<gtsam::LevenbergMarquardtParams>> G
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 virtual class LevenbergMarquardtOptimizer : gtsam::NonlinearOptimizer {
   LevenbergMarquardtOptimizer(const gtsam::NonlinearFactorGraph& graph,
-                              const gtsam::Values& initialValues);
+                              const gtsam::Values& initialValues,
+                              const gtsam::LevenbergMarquardtParams& params =
+                                  gtsam::LevenbergMarquardtParams());
   LevenbergMarquardtOptimizer(const gtsam::NonlinearFactorGraph& graph,
                               const gtsam::Values& initialValues,
-                              const gtsam::LevenbergMarquardtParams& params);
+                              const gtsam::Ordering& ordering,
+                              const gtsam::LevenbergMarquardtParams& params =
+                                  gtsam::LevenbergMarquardtParams());
+
   double lambda() const;
   void print(string s = "") const;
 };
 
 #include <gtsam/nonlinear/ISAM2.h>
 class ISAM2GaussNewtonParams {
-  ISAM2GaussNewtonParams();
+  ISAM2GaussNewtonParams(double _wildfireThreshold = 0.001);
 
   void print(string s = "") const;
 
@@ -414,7 +430,7 @@ class ISAM2DoglegParams {
 };
 
 class ISAM2ThresholdMapValue {
-  ISAM2ThresholdMapValue(char c, Vector thresholds);
+  ISAM2ThresholdMapValue(char c, gtsam::Vector thresholds);
   ISAM2ThresholdMapValue(const gtsam::ISAM2ThresholdMapValue& other);
 };
 
@@ -464,7 +480,7 @@ class ISAM2Clique {
   ISAM2Clique();
 
   // Standard Interface
-  Vector gradientContribution() const;
+  gtsam::Vector gradientContribution() const;
   void print(string s = "",
              gtsam::KeyFormatter keyFormatter = gtsam::DefaultKeyFormatter);
 };
@@ -528,13 +544,14 @@ class ISAM2 {
   gtsam::Values calculateEstimate() const;
   template <VALUE = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
                      gtsam::Rot3, gtsam::Pose3, gtsam::Cal3_S2, gtsam::Cal3DS2,
-                     gtsam::Cal3Bundler, gtsam::EssentialMatrix,
+                     gtsam::Cal3f, gtsam::Cal3Bundler, 
+                     gtsam::EssentialMatrix, gtsam::FundamentalMatrix, gtsam::SimpleFundamentalMatrix,
                      gtsam::PinholeCamera<gtsam::Cal3_S2>,
                      gtsam::PinholeCamera<gtsam::Cal3Bundler>,
                      gtsam::PinholeCamera<gtsam::Cal3Fisheye>,
-                     gtsam::PinholeCamera<gtsam::Cal3Unified>, Vector, Matrix}>
+                     gtsam::PinholeCamera<gtsam::Cal3Unified>, gtsam::Vector, gtsam::Matrix}>
   VALUE calculateEstimate(size_t key) const;
-  Matrix marginalCovariance(size_t key) const;
+  gtsam::Matrix marginalCovariance(size_t key) const;
   gtsam::Values calculateBestEstimate() const;
   gtsam::VectorValues getDelta() const;
   double error(const gtsam::VectorValues& x) const;
@@ -561,7 +578,7 @@ class NonlinearISAM {
   void printStats() const;
   void saveGraph(string s) const;
   gtsam::Values estimate() const;
-  Matrix marginalCovariance(size_t key) const;
+  gtsam::Matrix marginalCovariance(size_t key) const;
   int reorderInterval() const;
   int reorderCounter() const;
   void update(const gtsam::NonlinearFactorGraph& newFactors,
@@ -580,7 +597,7 @@ class NonlinearISAM {
 //*************************************************************************
 #include <gtsam/nonlinear/PriorFactor.h>
 template <T = {double,
-               Vector,
+               gtsam::Vector,
                gtsam::Point2,
                gtsam::StereoPoint2,
                gtsam::Point3,
@@ -700,7 +717,7 @@ virtual class BatchFixedLagSmoother : gtsam::FixedLagSmoother {
   gtsam::LevenbergMarquardtParams params() const;
   template <VALUE = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
                      gtsam::Rot3, gtsam::Pose3, gtsam::Cal3_S2, gtsam::Cal3DS2,
-                     Vector, Matrix}>
+                     gtsam::Vector, gtsam::Matrix}>
   VALUE calculateEstimate(size_t key) const;
 };
 

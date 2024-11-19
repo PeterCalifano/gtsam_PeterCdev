@@ -2,8 +2,8 @@ name: Python CI
 
 on: [pull_request]
 
-# Every time you make a push to your PR, it cancel immediately the previous checks, 
-# and start a new one. The other runner will be available more quickly to your PR. 
+# Every time you make a push to your PR, it cancel immediately the previous checks,
+# and start a new one. The other runner will be available more quickly to your PR.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -19,7 +19,7 @@ jobs:
       CMAKE_BUILD_TYPE: ${{ matrix.build_type }}
       PYTHON_VERSION: ${{ matrix.python_version }}
       BOOST_VERSION: 1.72.0
-      BOOST_EXE: boost_1_72_0-msvc-14.2      
+      BOOST_EXE: boost_1_72_0-msvc-14.2
 
     strategy:
       fail-fast: true
@@ -29,9 +29,9 @@ jobs:
         name:
           [
             ubuntu-20.04-gcc-9,
-            ubuntu-20.04-gcc-9-tbb,
             ubuntu-20.04-clang-9,
-            macOS-11-xcode-13.4.1,
+            macos-13-xcode-14.2,
+            macos-14-xcode-15.4,
             windows-2022-msbuild,
           ]
 
@@ -43,21 +43,20 @@ jobs:
             compiler: gcc
             version: "9"
 
-          - name: ubuntu-20.04-gcc-9-tbb
-            os: ubuntu-20.04
-            compiler: gcc
-            version: "9"
-            flag: tbb
-
           - name: ubuntu-20.04-clang-9
             os: ubuntu-20.04
             compiler: clang
             version: "9"
 
-          - name: macOS-11-xcode-13.4.1
-            os: macOS-11
+          - name: macos-13-xcode-14.2
+            os: macos-13
             compiler: xcode
-            version: "13.4.1"
+            version: "14.2"
+
+          - name: macos-14-xcode-15.4
+            os: macos-14
+            compiler: xcode
+            version: "15.4"
 
           - name: windows-2022-msbuild
             os: windows-2022
@@ -65,7 +64,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install (Linux)
         if: runner.os == 'Linux'
@@ -109,7 +108,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x${{matrix.platform}}
-          toolset: 14.38
+          toolset: 14.40
 
       - name: cl version (Windows)
         if: runner.os == 'Windows'
@@ -117,7 +116,7 @@ jobs:
         run: cl
 
       - name: Setup python (Windows)
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         if: runner.os == 'Windows'
         with:
           python-version: ${{ matrix.python_version }}
@@ -139,7 +138,12 @@ jobs:
 
           # Use the prebuilt binary for Windows
           $Url = "https://sourceforge.net/projects/boost/files/boost-binaries/$env:BOOST_VERSION/$env:BOOST_EXE-${{matrix.platform}}.exe"
-          (New-Object System.Net.WebClient).DownloadFile($Url, "$env:TEMP\boost.exe")
+
+          # Create WebClient with appropriate settings and download Boost exe
+          $wc = New-Object System.Net.Webclient
+          $wc.Headers.Add("User-Agent: Other");
+          $wc.DownloadFile($Url, "$env:TEMP\boost.exe")
+
           Start-Process -Wait -FilePath "$env:TEMP\boost.exe" "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=$BOOST_PATH"
 
           # Set the BOOST_ROOT variable
@@ -161,6 +165,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           bash .github/scripts/python.sh -d
+
+      - name: Create virtual on MacOS
+        if: runner.os == 'macOS'
+        run: |
+          python$PYTHON_VERSION -m venv venv
+          source venv/bin/activate
+          echo "PATH=$(pwd)/venv/bin:$PATH" >> $GITHUB_ENV
+          python -m pip install --upgrade pip
 
       - name: Install Python Dependencies
         shell: bash
