@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <gtsam/base/OptionalJacobian.h>
 #include <gtsam/geometry/EssentialMatrix.h>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Unit3.h>
@@ -86,6 +87,9 @@ class GTSAM_EXPORT FundamentalMatrix {
   /// Return the fundamental matrix representation
   Matrix3 matrix() const;
 
+  /// Computes the epipolar line in a (left) for a given point in b (right)
+  Vector3 epipolarLine(const Point2& p, OptionalJacobian<3, 7> H = {});
+
   /// @name Testable
   /// @{
   /// Print the FundamentalMatrix
@@ -98,7 +102,7 @@ class GTSAM_EXPORT FundamentalMatrix {
 
   /// @name Manifold
   /// @{
-  enum { dimension = 7 };  // 3 for U, 1 for s, 3 for V
+  inline constexpr static auto dimension = 7;  // 3 for U, 1 for s, 3 for V
   inline static size_t Dim() { return dimension; }
   inline size_t dim() const { return dimension; }
 
@@ -161,6 +165,9 @@ class GTSAM_EXPORT SimpleFundamentalMatrix {
   /// F = Ka^(-T) * E * Kb^(-1)
   Matrix3 matrix() const;
 
+  /// Computes the epipolar line in a (left) for a given point in b (right)
+  Vector3 epipolarLine(const Point2& p, OptionalJacobian<3, 7> H = {});
+
   /// @name Testable
   /// @{
   /// Print the SimpleFundamentalMatrix
@@ -172,7 +179,7 @@ class GTSAM_EXPORT SimpleFundamentalMatrix {
 
   /// @name Manifold
   /// @{
-  enum { dimension = 7 };  // 5 for E, 1 for fa, 1 for fb
+  inline constexpr static auto dimension = 7;  // 5 for E, 1 for fa, 1 for fb
   inline static size_t Dim() { return dimension; }
   inline size_t dim() const { return dimension; }
 

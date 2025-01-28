@@ -61,9 +61,7 @@ private:
 
 public:
 
-  enum {
-    dimension = 6
-  };
+  inline constexpr static auto dimension = 6;
 
   /// @name Standard Constructors
   /// @{
@@ -179,7 +177,7 @@ public:
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   friend class boost::serialization::access;
   template<class Archive>
   void serialize(Archive & ar, const unsigned int /*version*/) {

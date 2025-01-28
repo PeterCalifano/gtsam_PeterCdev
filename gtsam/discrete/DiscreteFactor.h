@@ -22,6 +22,7 @@
 #include <gtsam/discrete/AlgebraicDecisionTree.h>
 #include <gtsam/discrete/DiscreteValues.h>
 #include <gtsam/inference/Factor.h>
+#include <gtsam/inference/Ordering.h>
 
 #include <string>
 namespace gtsam {
@@ -45,6 +46,11 @@ class GTSAM_EXPORT DiscreteFactor : public Factor {
   typedef Factor Base;  ///< Our base class
 
   using Values = DiscreteValues;  ///< backwards compatibility
+
+  using Unary = std::function<double(const double&)>;
+  using UnaryAssignment =
+      std::function<double(const Assignment<Key>&, const double&)>;
+  using Binary = std::function<double(const double, const double)>;
 
  protected:
   /// Map of Keys and their cardinalities.
@@ -72,7 +78,7 @@ class GTSAM_EXPORT DiscreteFactor : public Factor {
   /// @{
 
   /// equals
-  virtual bool equals(const DiscreteFactor& lf, double tol = 1e-9) const = 0;
+  virtual bool equals(const DiscreteFactor& lf, double tol = 1e-9) const;
 
   /// print
   void print(
@@ -92,8 +98,21 @@ class GTSAM_EXPORT DiscreteFactor : public Factor {
 
   size_t cardinality(Key j) const { return cardinalities_.at(j); }
 
+  /**
+   * @brief Calculate probability for given values.
+   * Calls specialized evaluation under the hood.
+   *
+   * Note: Uses Assignment<Key> as it is the base class of DiscreteValues.
+   *
+   * @param values Discrete assignment.
+   * @return double
+   */
+  virtual double evaluate(const Assignment<Key>& values) const = 0;
+
   /// Find value for given assignment of values to variables
-  virtual double operator()(const DiscreteValues&) const = 0;
+  double operator()(const DiscreteValues& values) const {
+    return evaluate(values);
+  }
 
   /// Error is just -log(value)
   virtual double error(const DiscreteValues& values) const;
@@ -111,7 +130,39 @@ class GTSAM_EXPORT DiscreteFactor : public Factor {
   /// DecisionTreeFactor
   virtual DecisionTreeFactor operator*(const DecisionTreeFactor&) const = 0;
 
+  /**
+   * @brief Multiply in a DiscreteFactor and return the result as
+   * DiscreteFactor, both via shared pointers.
+   *
+   * @param df DiscreteFactor shared_ptr
+   * @return DiscreteFactor::shared_ptr
+   */
+  virtual DiscreteFactor::shared_ptr multiply(
+      const DiscreteFactor::shared_ptr& df) const = 0;
+
+  /// divide by DiscreteFactor::shared_ptr f (safely)
+  virtual DiscreteFactor::shared_ptr operator/(
+      const DiscreteFactor::shared_ptr& df) const = 0;
+
   virtual DecisionTreeFactor toDecisionTreeFactor() const = 0;
+
+  /// Create new factor by summing all values with the same separator values
+  virtual DiscreteFactor::shared_ptr sum(size_t nrFrontals) const = 0;
+
+  /// Create new factor by summing all values with the same separator values
+  virtual DiscreteFactor::shared_ptr sum(const Ordering& keys) const = 0;
+
+  /// Create new factor by maximizing over all values with the same separator.
+  virtual DiscreteFactor::shared_ptr max(size_t nrFrontals) const = 0;
+
+  /// Create new factor by maximizing over all values with the same separator.
+  virtual DiscreteFactor::shared_ptr max(const Ordering& keys) const = 0;
+
+  /**
+   * Get the number of non-zero values contained in this factor.
+   * It could be much smaller than `prod_{key}(cardinality(key))`.
+   */
+  virtual uint64_t nrValues() const = 0;
 
   /// @}
   /// @name Wrapper support
@@ -145,7 +196,7 @@ class GTSAM_EXPORT DiscreteFactor : public Factor {
   /// @}
 
  private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template <class ARCHIVE>

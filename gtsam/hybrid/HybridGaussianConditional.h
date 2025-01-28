@@ -23,6 +23,7 @@
 #include <gtsam/discrete/DecisionTree-inl.h>
 #include <gtsam/discrete/DecisionTree.h>
 #include <gtsam/discrete/DecisionTreeFactor.h>
+#include <gtsam/discrete/DiscreteConditional.h>
 #include <gtsam/discrete/DiscreteKey.h>
 #include <gtsam/hybrid/HybridFactor.h>
 #include <gtsam/hybrid/HybridGaussianFactor.h>
@@ -67,6 +68,9 @@ class GTSAM_EXPORT HybridGaussianConditional
   ///< Negative-log of the normalization constant (log(\sqrt(|2πΣ|))).
   ///< Take advantage of the neg-log space so everything is a minimization
   double negLogConstant_;
+
+  /// Flag to indicate if the conditional has been pruned.
+  bool pruned_ = false;
 
  public:
   /// @name Constructors
@@ -150,9 +154,10 @@ class GTSAM_EXPORT HybridGaussianConditional
    *
    * @param discreteParents the discrete parents. Will be placed last.
    * @param conditionalPairs Decision tree of GaussianFactor/scalar pairs.
+   * @param pruned Flag indicating if conditional has been pruned.
    */
   HybridGaussianConditional(const DiscreteKeys &discreteParents,
-                            const FactorValuePairs &pairs);
+                            const FactorValuePairs &pairs, bool pruned = false);
 
   /// @}
   /// @name Testable
@@ -231,7 +236,10 @@ class GTSAM_EXPORT HybridGaussianConditional
    * @return Shared pointer to possibly a pruned HybridGaussianConditional
    */
   HybridGaussianConditional::shared_ptr prune(
-      const DecisionTreeFactor &discreteProbs) const;
+      const DiscreteConditional &discreteProbs) const;
+
+  /// Return true if the conditional has already been pruned.
+  bool pruned() const { return pruned_; }
 
   /// @}
 
@@ -241,12 +249,12 @@ class GTSAM_EXPORT HybridGaussianConditional
 
   /// Private constructor that uses helper struct above.
   HybridGaussianConditional(const DiscreteKeys &discreteParents,
-                            Helper &&helper);
+                            Helper &&helper, bool pruned = false);
 
   /// Check whether `given` has values for all frontal keys.
   bool allFrontalsGiven(const VectorValues &given) const;
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template <class Archive>

@@ -26,7 +26,6 @@
 #include <gtsam/base/Matrix.h>
 #include <gtsam/dllexport.h>
 
-#include <cmath>
 #include <vector>
 
 namespace gtsam {
@@ -99,7 +98,7 @@ template <>
 GTSAM_EXPORT
 Vector9 SO3::vec(OptionalJacobian<9, 3> H) const;
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
 template <class Archive>
 /** Serialization function */
 void serialize(Archive& ar, SO3& R, const unsigned int /*version*/) {
@@ -133,16 +132,17 @@ GTSAM_EXPORT Matrix99 Dcompose(const SO3& R);
 // functor also implements dedicated methods to apply dexp and/or inv(dexp).
 
 /// Functor implementing Exponential map
-class GTSAM_EXPORT ExpmapFunctor {
- protected:
-  const double theta2;
-  Matrix3 W, K, KK;
+/// Math is based on Ethan Eade's elegant Lie group document, at
+/// https://www.ethaneade.org/lie.pdf.
+struct GTSAM_EXPORT ExpmapFunctor {
+  const double theta2, theta;
+  const Matrix3 W, WW;
   bool nearZero;
-  double theta, sin_theta, one_minus_cos;  // only defined if !nearZero
 
-  void init(bool nearZeroApprox = false);
+  // Ethan Eade's constants:
+  double A;  // A = sin(theta) / theta
+  double B;  // B = (1 - cos(theta))
 
- public:
   /// Constructor with element of Lie algebra so(3)
   explicit ExpmapFunctor(const Vector3& omega, bool nearZeroApprox = false);
 
@@ -150,35 +150,76 @@ class GTSAM_EXPORT ExpmapFunctor {
   ExpmapFunctor(const Vector3& axis, double angle, bool nearZeroApprox = false);
 
   /// Rodrigues formula
-  SO3 expmap() const;
+  Matrix3 expmap() const;
+
+ protected:
+  void init(bool nearZeroApprox = false);
 };
 
 /// Functor that implements Exponential map *and* its derivatives
-class DexpFunctor : public ExpmapFunctor {
+/// Math extends Ethan theme of elegant I + aW + bWW expressions.
+/// See https://www.ethaneade.org/lie.pdf expmap (82) and left Jacobian (83).
+struct GTSAM_EXPORT DexpFunctor : public ExpmapFunctor {
   const Vector3 omega;
-  double a, b;
-  Matrix3 dexp_;
 
- public:
+  // Ethan's C constant used in Jacobians
+  double C;  // (1 - A) / theta^2
+
+  // Constant used in inverse Jacobians
+  double D;  // (1 - A/2B) / theta2
+
+  // Constants used in cross and doubleCross
+  double E;  // (2B - A) / theta2
+  double F;  // (3C - B) / theta2
+
   /// Constructor with element of Lie algebra so(3)
-  GTSAM_EXPORT explicit DexpFunctor(const Vector3& omega, bool nearZeroApprox = false);
+  explicit DexpFunctor(const Vector3& omega, bool nearZeroApprox = false);
 
   // NOTE(luca): Right Jacobian for Exponential map in SO(3) - equation
   // (10.86) and following equations in G.S. Chirikjian, "Stochastic Models,
   // Information Theory, and Lie Groups", Volume 2, 2008.
-  //   expmap(omega + v) \approx expmap(omega) * expmap(dexp * v)
-  // This maps a perturbation v in the tangent space to
-  // a perturbation on the manifold Expmap(dexp * v) */
-  const Matrix3& dexp() const { return dexp_; }
+  //   Expmap(xi + dxi) \approx Expmap(xi) * Expmap(dexp * dxi)
+  // This maps a perturbation dxi=(w,v) in the tangent space to
+  // a perturbation on the manifold Expmap(dexp * xi)
+  Matrix3 rightJacobian() const { return I_3x3 - B * W + C * WW; }
+
+  // Compute the left Jacobian for Exponential map in SO(3)
+  Matrix3 leftJacobian() const { return I_3x3 + B * W + C * WW; }
+
+  /// Differential of expmap == right Jacobian
+  inline Matrix3 dexp() const { return rightJacobian(); }
+
+  /// Inverse of right Jacobian
+  Matrix3 rightJacobianInverse() const { return I_3x3 + 0.5 * W + D * WW; }
+
+  // Inverse of left Jacobian
+  Matrix3 leftJacobianInverse() const { return I_3x3 - 0.5 * W + D * WW; }
+
+  /// Synonym for rightJacobianInverse
+  inline Matrix3 invDexp() const { return rightJacobianInverse(); }
+
+  /// Computes B * (omega x v).
+  Vector3 crossB(const Vector3& v, OptionalJacobian<3, 3> H = {}) const;
+
+  /// Computes C * (omega x (omega x v)).
+  Vector3 doubleCrossC(const Vector3& v, OptionalJacobian<3, 3> H = {}) const;
 
   /// Multiplies with dexp(), with optional derivatives
-  GTSAM_EXPORT Vector3 applyDexp(const Vector3& v, OptionalJacobian<3, 3> H1 = {},
+  Vector3 applyDexp(const Vector3& v, OptionalJacobian<3, 3> H1 = {},
                     OptionalJacobian<3, 3> H2 = {}) const;
 
   /// Multiplies with dexp().inverse(), with optional derivatives
-  GTSAM_EXPORT Vector3 applyInvDexp(const Vector3& v,
-                       OptionalJacobian<3, 3> H1 = {},
+  Vector3 applyInvDexp(const Vector3& v, OptionalJacobian<3, 3> H1 = {},
                        OptionalJacobian<3, 3> H2 = {}) const;
+
+  /// Multiplies with leftJacobian(), with optional derivatives
+  Vector3 applyLeftJacobian(const Vector3& v, OptionalJacobian<3, 3> H1 = {},
+                            OptionalJacobian<3, 3> H2 = {}) const;
+
+  /// Multiplies with leftJacobianInverse(), with optional derivatives
+  Vector3 applyLeftJacobianInverse(const Vector3& v,
+                                   OptionalJacobian<3, 3> H1 = {},
+                                   OptionalJacobian<3, 3> H2 = {}) const;
 };
 }  //  namespace so3
 

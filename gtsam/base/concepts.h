@@ -8,7 +8,9 @@
 
 #pragma once
 
-#ifdef GTSAM_USE_BOOST_FEATURES
+#include <gtsam/config.h>
+
+#if GTSAM_USE_BOOST_FEATURES
 #include <boost/concept_check.hpp>
 #include <boost/concept/assert.hpp>
 #include <boost/concept/requires.hpp>

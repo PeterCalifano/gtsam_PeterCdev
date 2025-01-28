@@ -54,7 +54,7 @@ class GTSAM_EXPORT DiscreteConditional
   DiscreteConditional() {}
 
   /// Construct from factor, taking the first `nFrontals` keys as frontals.
-  DiscreteConditional(size_t nFrontals, const DecisionTreeFactor& f);
+  DiscreteConditional(size_t nFrontals, const DiscreteFactor& f);
 
   /**
    * Construct from DiscreteKeys and AlgebraicDecisionTree, taking the first
@@ -168,13 +168,9 @@ class GTSAM_EXPORT DiscreteConditional
     static_cast<const BaseConditional*>(this)->print(s, formatter);
   }
 
-  /// Evaluate, just look up in AlgebraicDecisionTree
-  double evaluate(const DiscreteValues& values) const {
-    return ADT::operator()(values);
-  }
-
-  using DecisionTreeFactor::error;       ///< DiscreteValues version
-  using DecisionTreeFactor::operator();  ///< DiscreteValues version
+  using BaseFactor::error;       ///< DiscreteValues version
+  using BaseFactor::evaluate;    ///< DiscreteValues version
+  using BaseFactor::operator();  ///< DiscreteValues version
 
   /**
    * @brief restrict to given *parent* values.
@@ -203,7 +199,7 @@ class GTSAM_EXPORT DiscreteConditional
    * @param parentsValues Known values of the parents
    * @return sample from conditional
    */
-  size_t sample(const DiscreteValues& parentsValues) const;
+  virtual size_t sample(const DiscreteValues& parentsValues) const;
 
   /// Single parent version.
   size_t sample(size_t parent_value) const;
@@ -217,6 +213,15 @@ class GTSAM_EXPORT DiscreteConditional
    * @return maximizing assignment for the frontal variable.
    */
   size_t argmax(const DiscreteValues& parentsValues = DiscreteValues()) const;
+
+  /**
+   * @brief Create new factor by maximizing over all
+   * values with the same separator.
+   *
+   * @param keys The keys to sum over.
+   * @return DiscreteFactor::shared_ptr
+   */
+  virtual DiscreteFactor::shared_ptr max(const Ordering& keys) const override;
 
   /// @}
   /// @name Advanced Interface
@@ -271,6 +276,19 @@ class GTSAM_EXPORT DiscreteConditional
    */
   double negLogConstant() const override;
 
+  /// Prune the conditional
+  virtual void prune(size_t maxNrAssignments);
+
+  /**
+   * @brief Remove the discrete modes whose assignments are given to us.
+   * Only applies to discrete conditionals.
+   *
+   * Imperative method so we can update nodes in the Bayes net or Bayes tree.
+   *
+   * @param given The discrete modes whose assignments we know.
+   */
+  void removeDiscreteModes(const DiscreteValues& given);
+
   /// @}
 
  protected:
@@ -279,7 +297,7 @@ class GTSAM_EXPORT DiscreteConditional
                                   bool forceComplete) const;
 
  private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template <class Archive>

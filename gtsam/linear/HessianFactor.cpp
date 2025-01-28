@@ -25,13 +25,14 @@
 #include <gtsam/base/cholesky.h>
 #include <gtsam/base/debug.h>
 #include <gtsam/base/FastMap.h>
+#include <gtsam/base/Vector.h>
 #include <gtsam/base/Matrix.h>
 #include <gtsam/base/ThreadsafeException.h>
 #include <gtsam/base/timing.h>
 
 #include <sstream>
+#include <cassert>
 #include <limits>
-#include "gtsam/base/Vector.h"
 
 using namespace std;
 
@@ -378,7 +379,7 @@ GaussianFactor::shared_ptr HessianFactor::negate() const {
   shared_ptr result = std::make_shared<This>(*this);
   // Negate the information matrix of the result
   result->info_.negate();
-  return std::move(result);
+  return result;
 }
 
 /* ************************************************************************* */

@@ -11,7 +11,7 @@
 
 /**
  *@file  Pose3.h
- *@brief 3D Pose
+ * @brief 3D Pose manifold SO(3) x R^3 and group SE(3)
  */
 
 // \callgraph
@@ -55,9 +55,9 @@ public:
   Pose3() : R_(traits<Rot3>::Identity()), t_(traits<Point3>::Identity()) {}
 
   /** Copy constructor */
-  Pose3(const Pose3& pose) :
-      R_(pose.R_), t_(pose.t_) {
-  }
+  Pose3(const Pose3& pose) = default;
+
+  Pose3& operator=(const Pose3& other) = default;
 
   /** Construct from R,t */
   Pose3(const Rot3& R, const Point3& t) :
@@ -77,6 +77,9 @@ public:
   static Pose3 Create(const Rot3& R, const Point3& t,
                       OptionalJacobian<6, 3> HR = {},
                       OptionalJacobian<6, 3> Ht = {});
+
+  /** Construct from Pose2 in the xy plane, with derivative. */
+  static Pose3 FromPose2(const Pose2& p, OptionalJacobian<6,3> H = {});
 
   /**
    *  Create Pose3 by aligning two point pairs
@@ -389,7 +392,7 @@ public:
   friend std::ostream &operator<<(std::ostream &os, const Pose3& p);
 
  private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>

@@ -19,6 +19,7 @@
 
 #include <CppUnitLite/TestHarness.h>
 #include <gtsam/base/Testable.h>
+#include <gtsam/base/TestableAssertions.h>
 #include <gtsam/base/serializationTestHelpers.h>
 #include <gtsam/discrete/DecisionTreeFactor.h>
 #include <gtsam/discrete/DiscreteDistribution.h>
@@ -29,6 +30,12 @@
 
 using namespace std;
 using namespace gtsam;
+
+/** Convert Signature into CPT */
+DecisionTreeFactor create(const Signature& signature) {
+  DecisionTreeFactor p(signature.discreteKeys(), signature.cpt());
+  return p;
+}
 
 /* ************************************************************************* */
 TEST(DecisionTreeFactor, ConstructorsMatch) {
@@ -106,20 +113,44 @@ TEST(DecisionTreeFactor, multiplication) {
 }
 
 /* ************************************************************************* */
+TEST(DecisionTreeFactor, Divide) {
+  DiscreteKey A(0, 2), S(1, 2);
+  DecisionTreeFactor pA = create(A % "99/1"), pS = create(S % "50/50");
+  DecisionTreeFactor joint = pA * pS;
+
+  DecisionTreeFactor s = joint / pA;
+
+  // Factors are not equal due to difference in keys
+  EXPECT(assert_inequal(pS, s));
+
+  // The underlying data should be the same
+  using ADT = AlgebraicDecisionTree<Key>;
+  EXPECT(assert_equal(ADT(pS), ADT(s)));
+
+  KeySet keys(joint.keys());
+  keys.insert(pA.keys().begin(), pA.keys().end());
+  EXPECT(assert_inequal(KeySet(pS.keys()), keys));
+  
+}
+
+/* ************************************************************************* */
 TEST(DecisionTreeFactor, sum_max) {
   DiscreteKey v0(0, 3), v1(1, 2);
   DecisionTreeFactor f1(v0 & v1, "1 2  3 4  5 6");
 
   DecisionTreeFactor expected(v1, "9 12");
-  DecisionTreeFactor::shared_ptr actual = f1.sum(1);
+  auto actual = std::dynamic_pointer_cast<DecisionTreeFactor>(f1.sum(1));
+  CHECK(actual);
   CHECK(assert_equal(expected, *actual, 1e-5));
 
   DecisionTreeFactor expected2(v1, "5 6");
-  DecisionTreeFactor::shared_ptr actual2 = f1.max(1);
+  auto actual2 = std::dynamic_pointer_cast<DecisionTreeFactor>(f1.max(1));
+  CHECK(actual2);
   CHECK(assert_equal(expected2, *actual2));
 
   DecisionTreeFactor f2(v1 & v0, "1 2  3 4  5 6");
-  DecisionTreeFactor::shared_ptr actual22 = f2.sum(1);
+  auto actual22 = std::dynamic_pointer_cast<DecisionTreeFactor>(f2.sum(1));
+  CHECK(actual22);
 }
 
 /* ************************************************************************* */
@@ -140,11 +171,46 @@ TEST(DecisionTreeFactor, enumerate) {
   EXPECT(actual == expected);
 }
 
+namespace pruning_fixture {
+
+DiscreteKey A(1, 2), B(2, 2), C(3, 2);
+DecisionTreeFactor f(A& B& C, "1 5 3 7 2 6 4 8");
+
+DiscreteKey D(4, 2);
+DecisionTreeFactor factor(
+    D& C & B & A,
+    "0.0 0.0 0.0 0.60658897 0.61241912 0.61241969 0.61247685 0.61247742 0.0 "
+    "0.0 0.0 0.99995287 1.0 1.0 1.0 1.0");
+
+}  // namespace pruning_fixture
+
+/* ************************************************************************* */
+// Check if computing the correct threshold works.
+TEST(DecisionTreeFactor, ComputeThreshold) {
+  using namespace pruning_fixture;
+
+  // Only keep the leaves with the top 5 values.
+  double threshold = f.computeThreshold(5);
+  EXPECT_DOUBLES_EQUAL(4.0, threshold, 1e-9);
+
+  // Check for more extreme pruning where we only keep the top 2 leaves
+  threshold = f.computeThreshold(2);
+  EXPECT_DOUBLES_EQUAL(7.0, threshold, 1e-9);
+
+  threshold = factor.computeThreshold(5);
+  EXPECT_DOUBLES_EQUAL(0.99995287, threshold, 1e-9);
+
+  threshold = factor.computeThreshold(3);
+  EXPECT_DOUBLES_EQUAL(1.0, threshold, 1e-9);
+
+  threshold = factor.computeThreshold(6);
+  EXPECT_DOUBLES_EQUAL(0.61247742, threshold, 1e-9);
+}
+
 /* ************************************************************************* */
 // Check pruning of the decision tree works as expected.
 TEST(DecisionTreeFactor, Prune) {
-  DiscreteKey A(1, 2), B(2, 2), C(3, 2);
-  DecisionTreeFactor f(A & B & C, "1 5 3 7 2 6 4 8");
+  using namespace pruning_fixture;
 
   // Only keep the leaves with the top 5 values.
   size_t maxNrAssignments = 5;
@@ -159,12 +225,6 @@ TEST(DecisionTreeFactor, Prune) {
   auto pruned2 = f.prune(maxNrAssignments);
   DecisionTreeFactor expected2(A & B & C, "0 0 0 7 0 0 0 8");
   EXPECT(assert_equal(expected2, pruned2));
-
-  DiscreteKey D(4, 2);
-  DecisionTreeFactor factor(
-      D & C & B & A,
-      "0.0 0.0 0.0 0.60658897 0.61241912 0.61241969 0.61247685 0.61247742 0.0 "
-      "0.0 0.0 0.99995287 1.0 1.0 1.0 1.0");
 
   DecisionTreeFactor expected3(D & C & B & A,
                                "0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 "
@@ -186,12 +246,6 @@ void maybeSaveDotFile(const DecisionTreeFactor& f, const string& filename) {
   auto formatter = [&](Key key) { return names[key]; };
   f.dot(filename, formatter, true);
 #endif
-}
-
-/** Convert Signature into CPT */
-DecisionTreeFactor create(const Signature& signature) {
-  DecisionTreeFactor p(signature.discreteKeys(), signature.cpt());
-  return p;
 }
 
 /* ************************************************************************* */

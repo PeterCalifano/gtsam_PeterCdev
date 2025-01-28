@@ -20,7 +20,7 @@ set(CEPHES_HEADER_FILES
     dllexport.h)
 
 # Add header files
-install(FILES ${CEPHES_HEADER_FILES} DESTINATION include/gtsam/3rdparty/cephes)
+install(FILES ${CEPHES_HEADER_FILES} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gtsam/3rdparty/cephes)
 
 set(CEPHES_SOURCES
     cephes/airy.c
@@ -89,7 +89,7 @@ set(CEPHES_SOURCES
     cephes/zetac.c)
 
 # Add library source files
-add_library(cephes-gtsam SHARED ${CEPHES_SOURCES})
+add_library(cephes-gtsam ${GTSAM_LIBRARY_TYPE} ${CEPHES_SOURCES})
 
 # Add include directory (aka headers)
 target_include_directories(
@@ -103,11 +103,7 @@ set_target_properties(
              C_STANDARD 99)
 
 if(WIN32)
-  set_target_properties(
-    cephes-gtsam
-    PROPERTIES PREFIX ""
-               COMPILE_FLAGS /w
-               RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/../../../bin")
+  set_target_properties(cephes-gtsam PROPERTIES COMPILE_FLAGS /w)
 endif()
 
 if(APPLE)

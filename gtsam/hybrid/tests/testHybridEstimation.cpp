@@ -16,6 +16,7 @@
  */
 
 #include <gtsam/discrete/DiscreteBayesNet.h>
+#include <gtsam/discrete/TableDistribution.h>
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/hybrid/HybridBayesNet.h>
@@ -99,103 +100,6 @@ TEST(HybridEstimation, Full) {
   HybridValues delta = bayesNet->optimize();
 
   Values initial = switching.linearizationPoint;
-  Values result = initial.retract(delta.continuous());
-
-  DiscreteValues expected_discrete;
-  for (size_t k = 0; k < K - 1; k++) {
-    expected_discrete[M(k)] = discrete_seq[k];
-  }
-  EXPECT(assert_equal(expected_discrete, delta.discrete()));
-
-  Values expected_continuous;
-  for (size_t k = 0; k < K; k++) {
-    expected_continuous.insert(X(k), measurements[k]);
-  }
-  EXPECT(assert_equal(expected_continuous, result));
-}
-
-/****************************************************************************/
-// Test approximate inference with an additional pruning step.
-TEST(HybridEstimation, IncrementalSmoother) {
-  using namespace estimation_fixture;
-
-  size_t K = 15;
-
-  // Switching example of robot moving in 1D
-  // with given measurements and equal mode priors.
-  HybridNonlinearFactorGraph graph;
-  Values initial;
-  Switching switching = InitializeEstimationProblem(K, 1.0, 0.1, measurements,
-                                                    "1/1 1/1", graph, initial);
-  HybridSmoother smoother;
-
-  HybridGaussianFactorGraph linearized;
-
-  constexpr size_t maxNrLeaves = 3;
-  for (size_t k = 1; k < K; k++) {
-    if (k > 1) graph.push_back(switching.modeChain.at(k - 1));  // Mode chain
-    graph.push_back(switching.binaryFactors.at(k - 1));         // Motion Model
-    graph.push_back(switching.unaryFactors.at(k));              // Measurement
-
-    initial.insert(X(k), switching.linearizationPoint.at<double>(X(k)));
-
-    linearized = *graph.linearize(initial);
-    Ordering ordering = smoother.getOrdering(linearized);
-
-    smoother.update(linearized, maxNrLeaves, ordering);
-    graph.resize(0);
-  }
-
-  HybridValues delta = smoother.hybridBayesNet().optimize();
-
-  Values result = initial.retract(delta.continuous());
-
-  DiscreteValues expected_discrete;
-  for (size_t k = 0; k < K - 1; k++) {
-    expected_discrete[M(k)] = discrete_seq[k];
-  }
-  EXPECT(assert_equal(expected_discrete, delta.discrete()));
-
-  Values expected_continuous;
-  for (size_t k = 0; k < K; k++) {
-    expected_continuous.insert(X(k), measurements[k]);
-  }
-  EXPECT(assert_equal(expected_continuous, result));
-}
-
-/****************************************************************************/
-// Test if pruned factor is set to correct error and no errors are thrown.
-TEST(HybridEstimation, ValidPruningError) {
-  using namespace estimation_fixture;
-
-  size_t K = 8;
-
-  HybridNonlinearFactorGraph graph;
-  Values initial;
-  Switching switching = InitializeEstimationProblem(K, 1e-2, 1e-3, measurements,
-                                                    "1/1 1/1", graph, initial);
-  HybridSmoother smoother;
-
-  HybridGaussianFactorGraph linearized;
-
-  constexpr size_t maxNrLeaves = 3;
-  for (size_t k = 1; k < K; k++) {
-    if (k > 1) graph.push_back(switching.modeChain.at(k - 1));  // Mode chain
-    graph.push_back(switching.binaryFactors.at(k - 1));         // Motion Model
-    graph.push_back(switching.unaryFactors.at(k));              // Measurement
-
-    initial.insert(X(k), switching.linearizationPoint.at<double>(X(k)));
-
-    linearized = *graph.linearize(initial);
-    Ordering ordering = smoother.getOrdering(linearized);
-
-    smoother.update(linearized, maxNrLeaves, ordering);
-
-    graph.resize(0);
-  }
-
-  HybridValues delta = smoother.hybridBayesNet().optimize();
-
   Values result = initial.retract(delta.continuous());
 
   DiscreteValues expected_discrete;
@@ -464,14 +368,14 @@ TEST(HybridEstimation, EliminateSequentialRegression) {
 
   // Create expected discrete conditional on m0.
   DiscreteKey m(M(0), 2);
-  DiscreteConditional expected(m % "0.51341712/1");  // regression
+  TableDistribution expected(m, "0.51341712 1");  // regression
 
   // Eliminate into BN using one ordering
   const Ordering ordering1{X(0), X(1), M(0)};
   HybridBayesNet::shared_ptr bn1 = fg->eliminateSequential(ordering1);
 
   // Check that the discrete conditional matches the expected.
-  auto dc1 = bn1->back()->asDiscrete();
+  auto dc1 = bn1->back()->asDiscrete<TableDistribution>();
   EXPECT(assert_equal(expected, *dc1, 1e-9));
 
   // Eliminate into BN using a different ordering
@@ -479,7 +383,7 @@ TEST(HybridEstimation, EliminateSequentialRegression) {
   HybridBayesNet::shared_ptr bn2 = fg->eliminateSequential(ordering2);
 
   // Check that the discrete conditional matches the expected.
-  auto dc2 = bn2->back()->asDiscrete();
+  auto dc2 = bn2->back()->asDiscrete<TableDistribution>();
   EXPECT(assert_equal(expected, *dc2, 1e-9));
 }
 

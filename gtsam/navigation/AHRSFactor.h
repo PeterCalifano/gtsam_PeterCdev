@@ -120,7 +120,7 @@ class GTSAM_EXPORT PreintegratedAhrsMeasurements : public PreintegratedRotation 
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class ARCHIVE>
@@ -139,9 +139,6 @@ class GTSAM_EXPORT AHRSFactor: public NoiseModelFactorN<Rot3, Rot3, Vector3> {
 
   PreintegratedAhrsMeasurements _PIM_;
 
-  /** Default constructor - only use for serialization */
-  AHRSFactor() {}
-
 public:
 
   // Provide access to the Matrix& version of evaluateError:
@@ -153,6 +150,9 @@ public:
 #else
   typedef std::shared_ptr<AHRSFactor> shared_ptr;
 #endif
+
+  /** Default constructor - only use for serialization */
+  AHRSFactor() {}
 
   /**
    * Constructor
@@ -208,7 +208,7 @@ public:
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class ARCHIVE>

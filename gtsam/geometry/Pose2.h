@@ -60,7 +60,10 @@ public:
   }
 
   /** copy constructor */
-  Pose2(const Pose2& pose) : r_(pose.r_), t_(pose.t_) {}
+  Pose2(const Pose2& pose) = default;
+  //  : r_(pose.r_), t_(pose.t_) {}
+
+  Pose2& operator=(const Pose2& other) = default;
 
   /**
    * construct from (x,y,theta)
@@ -81,9 +84,13 @@ public:
   Pose2(const Rot2& r, const Point2& t) : r_(r), t_(t) {}
 
   /** Constructor from 3*3 matrix */
-  Pose2(const Matrix &T) :
-    r_(Rot2::atan2(T(1, 0), T(0, 0))), t_(T(0, 2), T(1, 2)) {
-    assert(T.rows() == 3 && T.cols() == 3);
+  Pose2(const Matrix &T)
+      : r_(Rot2::atan2(T(1, 0), T(0, 0))), t_(T(0, 2), T(1, 2)) {
+#ifndef NDEBUG
+    if (T.rows() != 3 || T.cols() != 3) {
+      throw;
+    }
+#endif
   }
 
   /// @}
@@ -335,7 +342,7 @@ public:
 
  private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION  //
+#if GTSAM_ENABLE_BOOST_SERIALIZATION  //
   // Serialization function
   friend class boost::serialization::access;
   template<class Archive>

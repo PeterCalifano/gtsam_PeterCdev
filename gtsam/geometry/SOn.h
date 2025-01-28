@@ -24,7 +24,7 @@
 #include <gtsam/dllexport.h>
 #include <Eigen/Core>
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
 #include <boost/serialization/nvp.hpp>
 #endif
 
@@ -33,6 +33,7 @@
 #include <type_traits>
 #include <vector>
 #include <random>
+#include <cassert>
 
 namespace gtsam {
 
@@ -53,7 +54,7 @@ constexpr int NSquaredSO(int N) { return (N < 0) ? Eigen::Dynamic : N * N; }
 template <int N>
 class SO : public LieGroup<SO<N>, internal::DimensionSO(N)> {
  public:
-  enum { dimension = internal::DimensionSO(N) };
+  inline constexpr static auto dimension = internal::DimensionSO(N);
   using MatrixNN = Eigen::Matrix<double, N, N>;
   using VectorN2 = Eigen::Matrix<double, internal::NSquaredSO(N), 1>;
   using MatrixDD = Eigen::Matrix<double, dimension, dimension>;
@@ -325,7 +326,7 @@ class SO : public LieGroup<SO<N>, internal::DimensionSO(N)> {
   /// @name Serialization
   /// @{
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   template <class Archive>
   friend void save(Archive&, SO&, const unsigned int);
   template <class Archive>
@@ -379,7 +380,7 @@ template <>
 GTSAM_EXPORT
 typename SOn::VectorN2 SOn::vec(DynamicJacobian H) const;
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
 /** Serialization function */
 template<class Archive>
 void serialize(

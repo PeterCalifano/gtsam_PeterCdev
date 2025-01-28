@@ -567,7 +567,7 @@ TEST(Matrix, matrix_vector_multiplication )
   Vector AtAv = Vector3(142., 188., 234.);
 
   EQUALITY(A*v,Av);
-  EQUALITY(A^Av,AtAv);
+  EQUALITY(A.transpose() * Av,AtAv);
 }
 
 /* ************************************************************************* */
@@ -1151,7 +1151,7 @@ TEST(Matrix, Matrix24IsVectorSpace) {
 }
 
 TEST(Matrix, RowMajorIsVectorSpace) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   typedef Eigen::Matrix<double, 2, 3, Eigen::RowMajor> RowMajor;
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<RowMajor>);
 #endif
@@ -1166,7 +1166,7 @@ TEST(Matrix, VectorIsVectorSpace) {
 }
 
 TEST(Matrix, RowVectorIsVectorSpace) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   typedef Eigen::Matrix<double, 1, -1> RowVector;
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<RowVector>);
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<Vector5>);

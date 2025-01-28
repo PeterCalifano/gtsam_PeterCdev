@@ -27,7 +27,7 @@ $ make install
        downloaded from https://www.threadingbuildingblocks.org/
      - GTSAM may be configured to use MKL by toggling `GTSAM_WITH_EIGEN_MKL` and
        `GTSAM_WITH_EIGEN_MKL_OPENMP` to `ON`; however, best performance is usually
-       achieved with MKL disabled. We therefore advise you to benchmark your problem 
+       achieved with MKL disabled. We therefore advise you to benchmark your problem
        before using MKL.
 
     Tested compilers:
@@ -85,6 +85,7 @@ This section details how to build a GTSAM `.sln` file using Visual Studio.
 ### Prerequisites
 
 - Visual Studio with C++ CMake tools for Windows
+  - CMake >= 3.21 is required for Visual Studio installation because custom templates used in the build were added in 3.21. Use `cmake --version` in the VS Developer Command Prompt to ensure you meet this requirement.
 - All the other pre-requisites listed above.
 
 ### Steps
@@ -97,12 +98,32 @@ This section details how to build a GTSAM `.sln` file using Visual Studio.
   - Set the `Toolset` to `msvc_x64_x64`. If you know what toolset you require, then skip this step.
   - Update the `Build root` to `${projectDir}\build\${name}`.
   - You can optionally create a new configuration for a `Release` build.
-  - Set the necessary CMake variables for your use case.
+  - Set the necessary CMake variables for your use case. If you are not using Boost, uncheck `GTSAM_ENABLE_BOOST_SERIALIZATION` and `GTSAM_USE_BOOST_FEATURES`. 
   - Click on `Show advanced settings`.
   - For `CMake generator`, select a version which matches `Visual Studio <Version> <Year> Win64`, e.g. `Visual Studio 16 2019 Win64`.
   - Save the settings (Ctrl + S).
-4. Click on `Project -> Generate Cache`. This will generate the CMake build files (as seen in the Output window).
+4. Saving the CMake settings should automatically generate the cache. Otherwise, click on `Project -> Generate Cache`. This will generate the CMake build files (as seen in the Output window).
+  - If generating the cache yields `CMake Error ... (ADD_CUSTOM_COMMAND)` errors, you have an old CMake. Verify that your CMake is >= 3.21. If Visual Studio says that it is but you're still getting the error, install the latest CMake (tested with 3.31.4) and point to its executable in `CMakeSettings > Advanced settings > CMake executable`.
 5. The last step will generate a `GTSAM.sln` file in the `build` directory. At this point, GTSAM can be used as a regular Visual Studio project.
+
+### Python Installation
+
+To install the Python bindings on Windows:
+
+Install [pyparsing(>=2.4.2)](https://github.com/pyparsing/pyparsing), [pybind-stubgen>=2.5.1](https://github.com/sizmailov/pybind11-stubgen) and [numpy(>=1.11.0)](https://numpy.org/) with the Python environment you wish to develop in. These can all be installed as follows:
+
+  ```bash
+  pip install -r <gtsam_folder>/python/dev_requirements.txt
+  ```
+
+1. Follow the above steps for GTSAM general installation.
+  - In the CMake settings variables, set `GTSAM_BUILD_PYTHON` to be true and specify the path to your desired Python environment executable in the "CMake command arguments" field using `-DPYTHON_EXECUTABLE="<path to your python.exe>"`
+  - Once the cache is generated, ensure it's using your desired Python executable and the version is correct. It may cause errors later otherwise, such as missing Python packages required to build. If the version is not the one you specified in `DPYTHON_EXECUTABLE`, change the version in all 3 Python version specifiers in the CMake variables (`GTSAM_PYTHON_VERSION`, `PYBIND11_PYTHON_VERSION`, `WRAP_PYTHON_VERSION`) to the exact version of your desired executable. CMake might look for executables in the standard locations first, so ensure it's using the one you want before continuing.
+2. Build the project (Build > Build All).
+  - If you encounter the error `C1083	Cannot open include file: 'boost/serialization/export.hpp': No such file or directory`, you need to make changes to the template files that include Boost since your build is not using Boost. Locate `python/gtsam/gtsam.tpl` (and `python/gtsam_unstable/gtsam_unstable.tpl` if you are building unstable) and comment out the line `#include <boost/serialization/export.hpp>` near the top of each. Delete the generated build directory (e.g. if you made `build/x64-Debug`, delete the `x64-Debug` folder), regenerate the cache, and build again.
+  - If you encounter an error involving copying `.pyd` files, find the files mentioned (`gtsam_py.pyd` and `gtsam_unstable_py.pyd`, probably in the `Debug`/`Release`/etc. folder inside `build/<your build>/python/gtsam`) and copy them to where they are supposed to be (the source of the copy error, probably `build/<your build>/python/gtsam`) then rebuild.
+3. At this point, `gtsam` in `build/<your build>/python` is available to be used as a Python package. You can use `pip install .` in that directory to install the package.
+
 
 
 # CMake Configuration Options and Details
@@ -128,12 +149,12 @@ We support several build configurations for GTSAM (case insensitive)
 
 #### CMAKE_INSTALL_PREFIX
 
-The install folder. The default is typically `/usr/local/`. 
+The install folder. The default is typically `/usr/local/`.
 To configure to install to your home directory, you could execute:
 
 ```cmake -DCMAKE_INSTALL_PREFIX:PATH=$HOME ..```
 
-#### GTSAM_TOOLBOX_INSTALL_PATH 
+#### GTSAM_TOOLBOX_INSTALL_PATH
 
 The Matlab toolbox will be installed in a subdirectory
 of this folder, called 'gtsam'.
@@ -142,7 +163,7 @@ of this folder, called 'gtsam'.
 
 #### GTSAM_BUILD_CONVENIENCE_LIBRARIES
 
-This is a build option to allow for tests in subfolders to be linked against convenience libraries rather than the full libgtsam. 
+This is a build option to allow for tests in subfolders to be linked against convenience libraries rather than the full libgtsam.
 Set with the command line as follows:
 
 ```cmake -DGTSAM_BUILD_CONVENIENCE_LIBRARIES:OPTION=ON ..```
@@ -158,6 +179,16 @@ Set with the command line as follows:
 
   ON:             When enabled, libgtsam_unstable will be built and installed with the same options as libgtsam.  In addition, if tests are enabled, the unit tests will be built as well.  The Matlab toolbox will also be generated if the matlab toolbox is enabled, installing into a folder called `gtsam_unstable`.
   OFF (Default)  If disabled, no `gtsam_unstable` code will be included in build or install.
+
+## Convenience Options:
+
+#### GTSAM_BUILD_EXAMPLES_ALWAYS
+
+Whether or not to force building examples, can be true or false.
+
+#### GTSAM_BUILD_TESTS
+
+Whether or not to build tests, can be true or false.
 
 ## Check
 
@@ -179,7 +210,7 @@ Here are some tips to get the best possible performance out of GTSAM.
 
 1. Build in `Release` mode. GTSAM will run up to 10x faster compared to `Debug` mode.
 2. Enable TBB. On modern processors with multiple cores, this can easily speed up
-    optimization by 30-50%. Please note that this may not be true for very small 
+    optimization by 30-50%. Please note that this may not be true for very small
     problems where the overhead of dispatching work to multiple threads outweighs
     the benefit. We recommend that you benchmark your problem with/without TBB.
 3. Use `GTSAM_BUILD_WITH_MARCH_NATIVE`. A performance gain of

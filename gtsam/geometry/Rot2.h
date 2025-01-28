@@ -52,10 +52,14 @@ namespace gtsam {
     Rot2() : c_(1.0), s_(0.0) {}
     
     /** copy constructor */
-    Rot2(const Rot2& r) : Rot2(r.c_, r.s_) {}
+    Rot2(const Rot2& r) = default;
+
+    Rot2& operator=(const Rot2& other) = default;
 
     /// Constructor from angle in radians == exponential map at identity
     Rot2(double theta) : c_(cos(theta)), s_(sin(theta)) {}
+
+    // Rot2& operator=(const gtsam::Rot2& other) = default;
 
     /// Named constructor from angle in radians
     static Rot2 fromAngle(double theta) {
@@ -213,7 +217,7 @@ namespace gtsam {
     static Rot2 ClosestTo(const Matrix2& M);
 
   private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
     /** Serialization function */
     friend class boost::serialization::access;
     template<class ARCHIVE>

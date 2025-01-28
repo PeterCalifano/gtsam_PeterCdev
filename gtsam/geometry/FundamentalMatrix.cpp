@@ -9,6 +9,10 @@
 #include <gtsam/geometry/FundamentalMatrix.h>
 #include <gtsam/geometry/Point2.h>
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 namespace gtsam {
 
 //*************************************************************************
@@ -74,6 +78,20 @@ Matrix3 FundamentalMatrix::matrix() const {
          V_.transpose().matrix();
 }
 
+Vector3 FundamentalMatrix::epipolarLine(const Point2& p,
+                                        OptionalJacobian<3, 7> H) {
+  Vector3 point(p.x(), p.y(), 1);  // Create a point in homogeneous coordinates
+  Vector3 line = matrix() * point;  // Compute the epipolar line
+
+  if (H) {
+    // Compute the Jacobian if requested
+    throw std::runtime_error(
+        "FundamentalMatrix::epipolarLine: Jacobian not implemented yet.");
+  }
+
+  return line;  // Return the epipolar line
+}
+
 void FundamentalMatrix::print(const std::string& s) const {
   std::cout << s << matrix() << std::endl;
 }
@@ -114,6 +132,20 @@ Matrix3 SimpleFundamentalMatrix::Kb() const {
 
 Matrix3 SimpleFundamentalMatrix::matrix() const {
   return Ka().transpose().inverse() * E_.matrix() * Kb().inverse();
+}
+
+Vector3 SimpleFundamentalMatrix::epipolarLine(const Point2& p,
+                                              OptionalJacobian<3, 7> H) {
+  Vector3 point(p.x(), p.y(), 1);  // Create a point in homogeneous coordinates
+  Vector3 line = matrix() * point;  // Compute the epipolar line
+
+  if (H) {
+    // Compute the Jacobian if requested
+    throw std::runtime_error(
+        "SimpleFundamentalMatrix::epipolarLine: Jacobian not implemented yet.");
+  }
+
+  return line;  // Return the epipolar line
 }
 
 void SimpleFundamentalMatrix::print(const std::string& s) const {

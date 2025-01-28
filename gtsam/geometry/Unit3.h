@@ -53,9 +53,7 @@ private:
 
 public:
 
-  enum {
-    dimension = 2
-  };
+  inline constexpr static auto dimension = 2;
 
   /// @name Constructors
   /// @{
@@ -200,7 +198,7 @@ private:
 
   /// @name Advanced Interface
   /// @{
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class ARCHIVE>

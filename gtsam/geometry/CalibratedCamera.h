@@ -25,7 +25,7 @@
 #include <gtsam/base/Manifold.h>
 #include <gtsam/base/ThreadsafeException.h>
 #include <gtsam/dllexport.h>
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
 #include <boost/serialization/nvp.hpp>
 #endif
 
@@ -230,7 +230,7 @@ public:
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>
@@ -252,9 +252,7 @@ class GTSAM_EXPORT CalibratedCamera: public PinholeBase {
 
 public:
 
-  enum {
-    dimension = 6
-  };
+  inline constexpr static auto dimension = 6;
 
   /// @name Standard Constructors
   /// @{
@@ -408,7 +406,7 @@ private:
   /// @name Advanced Interface
   /// @{
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>

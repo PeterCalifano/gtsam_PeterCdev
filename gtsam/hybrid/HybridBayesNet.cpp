@@ -19,6 +19,8 @@
 #include <gtsam/discrete/DiscreteBayesNet.h>
 #include <gtsam/discrete/DiscreteConditional.h>
 #include <gtsam/discrete/DiscreteFactorGraph.h>
+#include <gtsam/discrete/DiscreteMarginals.h>
+#include <gtsam/discrete/TableDistribution.h>
 #include <gtsam/hybrid/HybridBayesNet.h>
 #include <gtsam/hybrid/HybridValues.h>
 
@@ -45,7 +47,8 @@ bool HybridBayesNet::equals(const This &bn, double tol) const {
 // TODO(Frank): This can be quite expensive *unless* the factors have already
 // been pruned before. Another, possibly faster approach is branch and bound
 // search to find the K-best leaves and then create a single pruned conditional.
-HybridBayesNet HybridBayesNet::prune(size_t maxNrLeaves) const {
+HybridBayesNet HybridBayesNet::prune(
+    size_t maxNrLeaves, const std::optional<double> &deadModeThreshold) const {
   // Collect all the discrete conditionals. Could be small if already pruned.
   const DiscreteBayesNet marginal = discreteMarginal();
 
@@ -55,12 +58,56 @@ HybridBayesNet HybridBayesNet::prune(size_t maxNrLeaves) const {
     joint = joint * (*conditional);
   }
 
-  // Prune the joint. NOTE: again, possibly quite expensive.
-  const DecisionTreeFactor pruned = joint.prune(maxNrLeaves);
-
-  // Create a the result starting with the pruned joint.
+  // Initialize the resulting HybridBayesNet.
   HybridBayesNet result;
-  result.emplace_shared<DiscreteConditional>(pruned.size(), pruned);
+
+  // Prune the joint. NOTE: imperative and, again, possibly quite expensive.
+  DiscreteConditional pruned = joint;
+  pruned.prune(maxNrLeaves);
+
+  DiscreteValues deadModesValues;
+  // If we have a dead mode threshold and discrete variables left after pruning,
+  // then we run dead mode removal.
+  if (deadModeThreshold.has_value() && pruned.keys().size() > 0) {
+    DiscreteMarginals marginals(DiscreteFactorGraph{pruned});
+    for (auto dkey : pruned.discreteKeys()) {
+      Vector probabilities = marginals.marginalProbabilities(dkey);
+
+      int index = -1;
+      auto threshold = (probabilities.array() > *deadModeThreshold);
+      // If atleast 1 value is non-zero, then we can find the index
+      // Else if all are zero, index would be set to 0 which is incorrect
+      if (!threshold.isZero()) {
+        threshold.maxCoeff(&index);
+      }
+
+      if (index >= 0) {
+        deadModesValues.emplace(dkey.first, index);
+      }
+    }
+
+    // Remove the modes (imperative)
+    pruned.removeDiscreteModes(deadModesValues);
+
+    /*
+      If the pruned discrete conditional has any keys left,
+      we add it to the HybridBayesNet.
+      If not, it means it is an orphan so we don't add this pruned joint,
+      and instead add only the marginals below.
+    */
+    if (pruned.keys().size() > 0) {
+      result.emplace_shared<DiscreteConditional>(pruned);
+    }
+
+    // Add the marginals for future factors
+    for (auto &&[key, _] : deadModesValues) {
+      result.push_back(
+          std::dynamic_pointer_cast<DiscreteConditional>(marginals(key)));
+    }
+
+  } else {
+    result.emplace_shared<DiscreteConditional>(pruned);
+  }
 
   /* To prune, we visitWith every leaf in the HybridGaussianConditional.
    * For each leaf, using the assignment we can check the discrete decision tree
@@ -70,14 +117,34 @@ HybridBayesNet HybridBayesNet::prune(size_t maxNrLeaves) const {
    */
 
   // Go through all the Gaussian conditionals in the Bayes Net and prune them as
-  // per pruned Discrete joint.
+  // per pruned discrete joint.
   for (auto &&conditional : *this) {
     if (auto hgc = conditional->asHybrid()) {
       // Prune the hybrid Gaussian conditional!
       auto prunedHybridGaussianConditional = hgc->prune(pruned);
 
-      // Type-erase and add to the pruned Bayes Net fragment.
-      result.push_back(prunedHybridGaussianConditional);
+      if (deadModeThreshold.has_value()) {
+        KeyVector deadKeys, conditionalDiscreteKeys;
+        for (const auto &kv : deadModesValues) {
+          deadKeys.push_back(kv.first);
+        }
+        for (auto dkey : prunedHybridGaussianConditional->discreteKeys()) {
+          conditionalDiscreteKeys.push_back(dkey.first);
+        }
+        // The discrete keys in the conditional are the same as the keys in the
+        // dead modes, then we just get the corresponding Gaussian conditional.
+        if (deadKeys == conditionalDiscreteKeys) {
+          result.push_back(
+              prunedHybridGaussianConditional->choose(deadModesValues));
+        } else {
+          // Add as-is
+          result.push_back(prunedHybridGaussianConditional);
+        }
+      } else {
+        // Type-erase and add to the pruned Bayes Net fragment.
+        result.push_back(prunedHybridGaussianConditional);
+      }
+
     } else if (auto gc = conditional->asGaussian()) {
       // Add the non-HybridGaussianConditional conditional
       result.push_back(gc);
@@ -120,18 +187,30 @@ GaussianBayesNet HybridBayesNet::choose(
 }
 
 /* ************************************************************************* */
-HybridValues HybridBayesNet::optimize() const {
+DiscreteValues HybridBayesNet::mpe() const {
   // Collect all the discrete factors to compute MPE
   DiscreteFactorGraph discrete_fg;
 
   for (auto &&conditional : *this) {
     if (conditional->isDiscrete()) {
-      discrete_fg.push_back(conditional->asDiscrete());
+      if (auto dtc = conditional->asDiscrete<TableDistribution>()) {
+        // The number of keys should be small so should not
+        // be expensive to convert to DiscreteConditional.
+        discrete_fg.push_back(DiscreteConditional(dtc->nrFrontals(),
+                                                  dtc->toDecisionTreeFactor()));
+      } else {
+        discrete_fg.push_back(conditional->asDiscrete());
+      }
     }
   }
 
+  return discrete_fg.optimize();
+}
+
+/* ************************************************************************* */
+HybridValues HybridBayesNet::optimize() const {
   // Solve for the MPE
-  DiscreteValues mpe = discrete_fg.optimize();
+  DiscreteValues mpe = this->mpe();
 
   // Given the MPE, compute the optimal continuous values.
   return HybridValues(optimize(mpe), mpe);

@@ -20,6 +20,7 @@
 #include <gtsam/base/timing.h>
 
 #include <cmath>
+#include <cassert>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -63,7 +64,7 @@ std::optional<Vector> checkIfDiagonal(const Matrix& M) {
     Vector diagonal(n);
     for (j = 0; j < n; j++)
       diagonal(j) = M(j, j);
-    return std::move(diagonal);
+    return diagonal;
   }
 }
 

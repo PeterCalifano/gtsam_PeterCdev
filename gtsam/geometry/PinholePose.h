@@ -212,7 +212,7 @@ public:
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>
@@ -245,9 +245,7 @@ private:
 
 public:
 
-  enum {
-    dimension = 6
-  }; ///< There are 6 DOF to optimize for
+  inline constexpr static auto dimension = 6; ///< There are 6 DOF to optimize for
 
   /// @name Standard Constructors
   /// @{
@@ -427,7 +425,7 @@ public:
 
 private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>

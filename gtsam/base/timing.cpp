@@ -31,7 +31,9 @@
 
 namespace gtsam {
 namespace internal {
-  
+
+using ChildOrder = FastMap<size_t, std::shared_ptr<TimingOutline>>;
+
 // a static shared_ptr to TimingOutline with nullptr as the pointer
 const static std::shared_ptr<TimingOutline> nullTimingOutline;
 
@@ -57,7 +59,7 @@ void TimingOutline::add(size_t usecs, size_t usecsWall) {
 TimingOutline::TimingOutline(const std::string& label, size_t id) :
     id_(id), t_(0), tWall_(0), t2_(0.0), tIt_(0), tMax_(0), tMin_(0), n_(0), myOrder_(
         0), lastChildOrder_(0), label_(label) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
 #ifdef GTSAM_USING_NEW_BOOST_TIMERS
   timer_.stop();
 #endif
@@ -66,7 +68,7 @@ TimingOutline::TimingOutline(const std::string& label, size_t id) :
 
 /* ************************************************************************* */
 size_t TimingOutline::time() const {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   size_t time = 0;
   bool hasChildren = false;
   for(const ChildMap::value_type& child: children_) {
@@ -84,14 +86,13 @@ size_t TimingOutline::time() const {
 
 /* ************************************************************************* */
 void TimingOutline::print(const std::string& outline) const {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   std::string formattedLabel = label_;
   std::replace(formattedLabel.begin(), formattedLabel.end(), '_', ' ');
   std::cout << outline << "-" << formattedLabel << ": " << self() << " CPU ("
       << n_ << " times, " << wall() << " wall, " << secs() << " children, min: "
       << min() << " max: " << max() << ")\n";
   // Order children
-  typedef FastMap<size_t, std::shared_ptr<TimingOutline> > ChildOrder;
   ChildOrder childOrder;
   for(const ChildMap::value_type& child: children_) {
     childOrder[child.second->myOrder_] = child.second;
@@ -106,9 +107,57 @@ void TimingOutline::print(const std::string& outline) const {
 #endif
 }
 
+/* ************************************************************************* */
+void TimingOutline::printCsvHeader(bool addLineBreak) const {
+#if GTSAM_USE_BOOST_FEATURES
+  // Order is (CPU time, number of times, wall time, time + children in seconds,
+  // min time, max time)
+  std::cout << label_ + " cpu time (s)" << "," << label_ + " #calls" << ","
+            << label_ + " wall time(s)" << "," << label_ + " subtree time (s)"
+            << "," << label_ + " min time (s)" << "," << label_ + "max time(s)"
+            << ",";
+  // Order children
+  ChildOrder childOrder;
+  for (const ChildMap::value_type& child : children_) {
+    childOrder[child.second->myOrder_] = child.second;
+  }
+  // Print children
+  for (const ChildOrder::value_type& order_child : childOrder) {
+    order_child.second->printCsvHeader();
+  }
+  if (addLineBreak) {
+    std::cout << std::endl;
+  }
+  std::cout.flush();
+#endif
+}
+
+/* ************************************************************************* */
+void TimingOutline::printCsv(bool addLineBreak) const {
+#if GTSAM_USE_BOOST_FEATURES
+  // Order is (CPU time, number of times, wall time, time + children in seconds,
+  // min time, max time)
+  std::cout << self() << "," << n_ << "," << wall() << "," << secs() << ","
+            << min() << "," << max() << ",";
+  // Order children
+  ChildOrder childOrder;
+  for (const ChildMap::value_type& child : children_) {
+    childOrder[child.second->myOrder_] = child.second;
+  }
+  // Print children
+  for (const ChildOrder::value_type& order_child : childOrder) {
+    order_child.second->printCsv(false);
+  }
+  if (addLineBreak) {
+    std::cout << std::endl;
+  }
+  std::cout.flush();
+#endif
+}
+
 void TimingOutline::print2(const std::string& outline,
     const double parentTotal) const {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   const int w1 = 24, w2 = 2, w3 = 6, w4 = 8, precision = 2;
   const double selfTotal = self(), selfMean = selfTotal / double(n_);
   const double childTotal = secs();
@@ -153,7 +202,7 @@ void TimingOutline::print2(const std::string& outline,
 /* ************************************************************************* */
 const std::shared_ptr<TimingOutline>& TimingOutline::child(size_t child,
     const std::string& label, const std::weak_ptr<TimingOutline>& thisPtr) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   assert(thisPtr.lock().get() == this);
   std::shared_ptr<TimingOutline>& result = children_[child];
   if (!result) {
@@ -172,7 +221,7 @@ const std::shared_ptr<TimingOutline>& TimingOutline::child(size_t child,
 /* ************************************************************************* */
 void TimingOutline::tic() {
 // Disable this entire function if we are not using boost
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
 #ifdef GTSAM_USING_NEW_BOOST_TIMERS
   assert(timer_.is_stopped());
   timer_.start();
@@ -191,7 +240,7 @@ void TimingOutline::tic() {
 /* ************************************************************************* */
 void TimingOutline::toc() {
 // Disable this entire function if we are not using boost
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
 
 #ifdef GTSAM_USING_NEW_BOOST_TIMERS
 
@@ -225,7 +274,7 @@ void TimingOutline::toc() {
 
 /* ************************************************************************* */
 void TimingOutline::finishedIteration() {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   if (tIt_ > tMax_)
     tMax_ = tIt_;
   if (tMin_ == 0 || tIt_ < tMin_)
@@ -240,7 +289,7 @@ void TimingOutline::finishedIteration() {
 /* ************************************************************************* */
 size_t getTicTocID(const char *descriptionC) {
 // disable anything which refers to TimingOutline as well, for good measure
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   const std::string description(descriptionC);
   // Global (static) map from strings to ID numbers and current next ID number
   static size_t nextId = 0;
@@ -263,7 +312,7 @@ size_t getTicTocID(const char *descriptionC) {
 /* ************************************************************************* */
 void tic(size_t id, const char *labelC) {
 // disable anything which refers to TimingOutline as well, for good measure
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   const std::string label(labelC);
   std::shared_ptr<TimingOutline> node = //
       gCurrentTimer.lock()->child(id, label, gCurrentTimer);
@@ -275,7 +324,7 @@ void tic(size_t id, const char *labelC) {
 /* ************************************************************************* */
 void toc(size_t id, const char *labelC) {
 // disable anything which refers to TimingOutline as well, for good measure
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   const std::string label(labelC);
   std::shared_ptr<TimingOutline> current(gCurrentTimer.lock());
   if (id != current->id_) {

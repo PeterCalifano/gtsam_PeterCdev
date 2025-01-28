@@ -49,7 +49,7 @@ class GTSAM_UNSTABLE_EXPORT Domain : public Constraint {
   /// Erase a value, non const :-(
   void erase(size_t value) { values_.erase(value); }
 
-  size_t nrValues() const { return values_.size(); }
+  uint64_t nrValues() const override { return values_.size(); }
 
   bool isSingleton() const { return nrValues() == 1; }
 
@@ -82,7 +82,7 @@ class GTSAM_UNSTABLE_EXPORT Domain : public Constraint {
   bool contains(size_t value) const { return values_.count(value) > 0; }
 
   /// Calculate value
-  double operator()(const DiscreteValues& values) const override;
+  double evaluate(const Assignment<Key>& values) const override;
 
   /// Convert into a decisiontree
   DecisionTreeFactor toDecisionTreeFactor() const override;

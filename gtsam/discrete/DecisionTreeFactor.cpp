@@ -18,9 +18,10 @@
  */
 
 #include <gtsam/base/FastSet.h>
-#include <gtsam/hybrid/HybridValues.h>
 #include <gtsam/discrete/DecisionTreeFactor.h>
 #include <gtsam/discrete/DiscreteConditional.h>
+#include <gtsam/discrete/TableFactor.h>
+#include <gtsam/hybrid/HybridValues.h>
 
 #include <utility>
 
@@ -48,7 +49,7 @@ namespace gtsam {
       return false;
     } else {
       const auto& f(static_cast<const DecisionTreeFactor&>(other));
-      return ADT::equals(f, tol);
+      return Base::equals(other, tol) && ADT::equals(f, tol);
     }
   }
 
@@ -60,6 +61,49 @@ namespace gtsam {
   /* ************************************************************************ */
   double DecisionTreeFactor::error(const HybridValues& values) const {
     return error(values.discrete());
+  }
+
+  /* ************************************************************************ */
+  DiscreteFactor::shared_ptr DecisionTreeFactor::multiply(
+      const DiscreteFactor::shared_ptr& f) const {
+    DiscreteFactor::shared_ptr result;
+    if (auto tf = std::dynamic_pointer_cast<TableFactor>(f)) {
+      // If f is a TableFactor, we convert `this` to a TableFactor since this
+      // conversion is cheaper than converting `f` to a DecisionTreeFactor. We
+      // then return a TableFactor.
+      result = std::make_shared<TableFactor>((*tf) * TableFactor(*this));
+
+    } else if (auto dtf = std::dynamic_pointer_cast<DecisionTreeFactor>(f)) {
+      // If `f` is a DecisionTreeFactor, simply call operator*.
+      result = std::make_shared<DecisionTreeFactor>(this->operator*(*dtf));
+
+    } else {
+      // Simulate double dispatch in C++
+      // Useful for other classes which inherit from DiscreteFactor and have
+      // only `operator*(DecisionTreeFactor)` defined. Thus, other classes don't
+      // need to be updated.
+      result = std::make_shared<DecisionTreeFactor>(f->operator*(*this));
+    }
+    return result;
+  }
+
+  /* ************************************************************************ */
+  DiscreteFactor::shared_ptr DecisionTreeFactor::operator/(
+      const DiscreteFactor::shared_ptr& f) const {
+    if (auto tf = std::dynamic_pointer_cast<TableFactor>(f)) {
+      // Check if `f` is a TableFactor. If yes, then
+      // convert `this` to a TableFactor which is cheaper.
+      return std::make_shared<TableFactor>(tf->operator/(TableFactor(*this)));
+
+    } else if (auto dtf = std::dynamic_pointer_cast<DecisionTreeFactor>(f)) {
+      // If `f` is a DecisionTreeFactor, divide normally.
+      return std::make_shared<DecisionTreeFactor>(this->operator/(*dtf));
+
+    } else {
+      // Else, convert `f` to a DecisionTreeFactor so we can divide
+      return std::make_shared<DecisionTreeFactor>(
+          this->operator/(f->toDecisionTreeFactor()));
+    }
   }
 
   /* ************************************************************************ */
@@ -83,7 +127,7 @@ namespace gtsam {
   }
 
   /* ************************************************************************ */
-  DecisionTreeFactor DecisionTreeFactor::apply(ADT::Unary op) const {
+  DecisionTreeFactor DecisionTreeFactor::apply(Unary op) const {
     // apply operand
     ADT result = ADT::apply(op);
     // Make a new factor
@@ -91,7 +135,7 @@ namespace gtsam {
   }
 
   /* ************************************************************************ */
-  DecisionTreeFactor DecisionTreeFactor::apply(ADT::UnaryAssignment op) const {
+  DecisionTreeFactor DecisionTreeFactor::apply(UnaryAssignment op) const {
     // apply operand
     ADT result = ADT::apply(op);
     // Make a new factor
@@ -100,7 +144,7 @@ namespace gtsam {
 
   /* ************************************************************************ */
   DecisionTreeFactor DecisionTreeFactor::apply(const DecisionTreeFactor& f,
-                                              ADT::Binary op) const {
+                                               Binary op) const {
     map<Key, size_t> cs;  // new cardinalities
     // make unique key-cardinality map
     for (Key j : keys()) cs[j] = cardinality(j);
@@ -118,8 +162,8 @@ namespace gtsam {
   }
 
   /* ************************************************************************ */
-  DecisionTreeFactor::shared_ptr DecisionTreeFactor::combine(
-      size_t nrFrontals, ADT::Binary op) const {
+  DecisionTreeFactor::shared_ptr DecisionTreeFactor::combine(size_t nrFrontals,
+                                                             Binary op) const {
     if (nrFrontals > size()) {
       throw invalid_argument(
           "DecisionTreeFactor::combine: invalid number of frontal "
@@ -146,7 +190,7 @@ namespace gtsam {
 
   /* ************************************************************************ */
   DecisionTreeFactor::shared_ptr DecisionTreeFactor::combine(
-      const Ordering& frontalKeys, ADT::Binary op) const {
+      const Ordering& frontalKeys, Binary op) const {
     if (frontalKeys.size() > size()) {
       throw invalid_argument(
           "DecisionTreeFactor::combine: invalid number of frontal "
@@ -195,7 +239,7 @@ namespace gtsam {
     // Construct unordered_map with values
     std::vector<std::pair<DiscreteValues, double>> result;
     for (const auto& assignment : assignments) {
-      result.emplace_back(assignment, operator()(assignment));
+      result.emplace_back(assignment, evaluate(assignment));
     }
     return result;
   }
@@ -203,7 +247,7 @@ namespace gtsam {
   /* ************************************************************************ */
   std::vector<double> DecisionTreeFactor::probabilities() const {
     // Set of all keys
-    std::set<Key> allKeys(keys().begin(), keys().end());
+    KeySet allKeys(keys().begin(), keys().end());
 
     std::vector<double> probs;
 
@@ -216,7 +260,7 @@ namespace gtsam {
      */
     auto op = [&](const Assignment<Key>& a, double p) {
       // Get all the keys in the current assignment
-      std::set<Key> assignment_keys;
+      KeySet assignment_keys;
       for (auto&& [k, _] : a) {
         assignment_keys.insert(k);
       }
@@ -407,22 +451,20 @@ namespace gtsam {
   };
 
   /* ************************************************************************ */
-  DecisionTreeFactor DecisionTreeFactor::prune(size_t maxNrAssignments) const {
-    const size_t N = maxNrAssignments;
-
+  double DecisionTreeFactor::computeThreshold(const size_t N) const {
     // Set of all keys
-    std::set<Key> allKeys(keys().begin(), keys().end());
+    std::set<Key> allKeys = this->labels();
     MinHeap min_heap;
 
     auto op = [&](const Assignment<Key>& a, double p) {
       // Get all the keys in the current assignment
-      std::set<Key> assignment_keys;
+      KeySet assignment_keys;
       for (auto&& [k, _] : a) {
         assignment_keys.insert(k);
       }
 
       // Find the keys missing in the assignment
-      std::vector<Key> diff;
+      KeyVector diff;
       std::set_difference(allKeys.begin(), allKeys.end(),
                           assignment_keys.begin(), assignment_keys.end(),
                           std::back_inserter(diff));
@@ -433,18 +475,25 @@ namespace gtsam {
         nrAssignments *= cardinalities_.at(k);
       }
 
+      // If min-heap is empty, fill it initially.
+      // This is because there is nothing at the top.
       if (min_heap.empty()) {
         min_heap.push(p, std::min(nrAssignments, N));
 
       } else {
-        // If p is larger than the smallest element,
-        // then we insert into the max heap.
-        if (p > min_heap.top()) {
-          for (size_t i = 0; i < std::min(nrAssignments, N); ++i) {
+        for (size_t i = 0; i < std::min(nrAssignments, N); ++i) {
+          // If p is larger than the smallest element,
+          // then we insert into the min heap.
+          // We check against the top each time because the
+          // heap maintains the smallest element at the top.
+          if (p > min_heap.top()) {
             if (min_heap.size() == N) {
               min_heap.pop();
             }
             min_heap.push(p);
+          } else {
+            // p is <= min value so move to the next one
+            break;
           }
         }
       }
@@ -452,7 +501,14 @@ namespace gtsam {
     };
     this->visitWith(op);
 
-    double threshold = min_heap.top();
+    return min_heap.top();
+  }
+
+  /* ************************************************************************ */
+  DecisionTreeFactor DecisionTreeFactor::prune(size_t maxNrAssignments) const {
+    const size_t N = maxNrAssignments;
+
+    double threshold = computeThreshold(N);
 
     // Now threshold the decision tree
     size_t total = 0;

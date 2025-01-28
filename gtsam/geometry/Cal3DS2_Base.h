@@ -46,7 +46,7 @@ class GTSAM_EXPORT Cal3DS2_Base : public Cal3 {
   double tol_ = 1e-5;             ///< tolerance value when calibrating
 
  public:
-  enum { dimension = 9 };
+  inline constexpr static auto dimension = 9;
 
   ///< shared pointer to stereo calibration object
   using shared_ptr = std::shared_ptr<Cal3DS2_Base>;
@@ -156,7 +156,7 @@ class GTSAM_EXPORT Cal3DS2_Base : public Cal3 {
   /// @name Advanced Interface
   /// @{
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template <class Archive>
