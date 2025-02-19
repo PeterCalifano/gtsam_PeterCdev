@@ -169,4 +169,40 @@ double HybridConditional::evaluate(const HybridValues &values) const {
   return std::exp(logProbability(values));
 }
 
+/* ************************************************************************ */
+std::shared_ptr<Factor> HybridConditional::restrict(
+    const DiscreteValues &assignment) const {
+  if (auto gc = asGaussian()) {
+    return std::make_shared<HybridConditional>(gc);
+  } else if (auto dc = asDiscrete()) {
+    return std::make_shared<HybridConditional>(dc);
+  };
+
+  auto hgc = asHybrid();
+  if (!hgc)
+    throw std::runtime_error(
+        "HybridConditional::restrict: conditional type not handled");
+
+  // Case 1: Fully determined, return corresponding Gaussian conditional
+  auto parentValues = assignment.filter(discreteKeys_);
+  if (parentValues.size() == discreteKeys_.size()) {
+    return std::make_shared<HybridConditional>(hgc->choose(parentValues));
+  }
+
+  // Case 2: Some live parents remain, build a new tree
+  auto remainingKeys = assignment.missingKeys(discreteKeys_);
+  if (!remainingKeys.empty()) {
+    auto newTree = hgc->factors();
+    for (const auto &[key, value] : parentValues) {
+      newTree = newTree.choose(key, value);
+    }
+    return std::make_shared<HybridConditional>(
+        std::make_shared<HybridGaussianConditional>(remainingKeys, newTree));
+  }
+
+  // Case 3: No changes needed, return original
+  return std::make_shared<HybridConditional>(hgc);
+}
+
+/* ************************************************************************ */
 }  // namespace gtsam

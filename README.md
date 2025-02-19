@@ -1,4 +1,4 @@
-# README - Georgia Tech Smoothing and Mapping Library - DARTLab fork
+# GTSAM: Georgia Tech Smoothing and Mapping Library
 
 **Important Note**
 

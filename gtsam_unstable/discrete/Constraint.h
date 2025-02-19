@@ -87,6 +87,16 @@ class GTSAM_UNSTABLE_EXPORT Constraint : public DiscreteFactor {
         this->operator*(df->toDecisionTreeFactor()));
   }
 
+  /// Multiply by a scalar
+  virtual DiscreteFactor::shared_ptr operator*(double s) const override {
+    return this->toDecisionTreeFactor() * s;
+  }
+
+  /// Multiply by a DecisionTreeFactor and return a DecisionTreeFactor
+  DecisionTreeFactor operator*(const DecisionTreeFactor& dtf) const override {
+    return this->toDecisionTreeFactor() * dtf;
+  }
+
   /// divide by DiscreteFactor::shared_ptr f (safely)
   DiscreteFactor::shared_ptr operator/(
       const DiscreteFactor::shared_ptr& df) const override {
@@ -104,6 +114,9 @@ class GTSAM_UNSTABLE_EXPORT Constraint : public DiscreteFactor {
     return toDecisionTreeFactor().sum(keys);
   }
 
+  /// Find the max value
+  double max() const override { return toDecisionTreeFactor().max(); }
+
   DiscreteFactor::shared_ptr max(size_t nrFrontals) const override {
     return toDecisionTreeFactor().max(nrFrontals);
   }
@@ -112,6 +125,17 @@ class GTSAM_UNSTABLE_EXPORT Constraint : public DiscreteFactor {
     return toDecisionTreeFactor().max(keys);
   }
 
+  /// Compute error for each assignment and return as a tree
+  AlgebraicDecisionTree<Key> errorTree() const override {
+    throw std::runtime_error("Constraint::error not implemented");
+  }
+
+  /// Compute error for each assignment and return as a tree
+  DiscreteFactor::shared_ptr restrict(
+      const DiscreteValues& assignment) const override {
+    throw std::runtime_error("Constraint::restrict not implemented");
+  }
+  
   /// @}
   /// @name Wrapper support
   /// @{

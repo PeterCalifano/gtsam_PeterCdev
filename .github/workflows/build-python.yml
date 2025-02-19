@@ -1,5 +1,8 @@
 name: Python CI
 
+# Since this is a required check, specify paths-ignore in the check-paths job
+# instead of under 'pull_request:'. Otherwise, the check is still required but
+# never runs, and a maintainer must bypass the check in order to merge the PR.
 on: [pull_request]
 
 # Every time you make a push to your PR, it cancel immediately the previous checks,
@@ -9,7 +12,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Check paths to changed files to see if any are non-ignored.
+  check-paths:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.filter.outputs.relevant_changes }}
+    steps:
+      - name: Check modified files
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          predicate-quantifier: 'every' # If any changed file matches every filter, proceed with build
+          filters: |
+            relevant_changes:
+              - '!**.md'
+              - '!**.ipynb' 
+              - '!myst.yml'
+              
   build:
+    # Only run build if relevant files have been modified in this PR.
+    needs: check-paths
+    if: needs.check-paths.outputs.should_run == 'true'
+    
     name: ${{ matrix.name }} ${{ matrix.build_type }} Python ${{ matrix.python_version }}
     runs-on: ${{ matrix.os }}
 

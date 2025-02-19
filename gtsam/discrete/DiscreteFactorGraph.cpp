@@ -65,15 +65,10 @@ namespace gtsam {
 
   /* ************************************************************************ */
   DiscreteFactor::shared_ptr DiscreteFactorGraph::product() const {
-    DiscreteFactor::shared_ptr result;
-    for (auto it = this->begin(); it != this->end(); ++it) {
-      if (*it) {
-        if (result) {
-          result = result->multiply(*it);
-        } else {
-          // Assign to the first non-null factor
-          result = *it;
-        }
+    DiscreteFactor::shared_ptr result = nullptr;
+    for (const auto& factor : *this) {
+      if (factor) {
+        result = result ? result->multiply(factor) : factor;
       }
     }
     return result;
@@ -120,18 +115,7 @@ namespace gtsam {
 
   /* ************************************************************************ */
   DiscreteFactor::shared_ptr DiscreteFactorGraph::scaledProduct() const {
-    // PRODUCT: multiply all factors
-    gttic(product);
-    DiscreteFactor::shared_ptr product = this->product();
-    gttoc(product);
-
-    // Max over all the potentials by pretending all keys are frontal:
-    auto denominator = product->max(product->size());
-
-    // Normalize the product factor to prevent underflow.
-    product = product->operator/(denominator);
-
-    return product;
+    return product()->scale();
   }
 
   /* ************************************************************************ */
@@ -217,7 +201,10 @@ namespace gtsam {
   std::pair<DiscreteConditional::shared_ptr, DiscreteFactor::shared_ptr>  //
   EliminateDiscrete(const DiscreteFactorGraph& factors,
                     const Ordering& frontalKeys) {
+    gttic(product);
+    // `product` is scaled later to prevent underflow.
     DiscreteFactor::shared_ptr product = factors.scaledProduct();
+    gttoc(product);
 
     // sum out frontals, this is the factor on the separator
     gttic(sum);

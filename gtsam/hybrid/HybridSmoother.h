@@ -27,21 +27,35 @@ namespace gtsam {
 class GTSAM_EXPORT HybridSmoother {
  private:
   HybridBayesNet hybridBayesNet_;
-  HybridGaussianFactorGraph remainingFactorGraph_;
 
   /// The threshold above which we make a decision about a mode.
-  std::optional<double> deadModeThreshold_;
+  std::optional<double> marginalThreshold_;
+  DiscreteValues fixedValues_;
 
  public:
   /**
    * @brief Constructor
    *
    * @param removeDeadModes Flag indicating whether to remove dead modes.
-   * @param deadModeThreshold The threshold above which a mode gets assigned a
+   * @param marginalThreshold The threshold above which a mode gets assigned a
    * value and is considered "dead". 0.99 is a good starting value.
    */
-  HybridSmoother(const std::optional<double> deadModeThreshold = {})
-      : deadModeThreshold_(deadModeThreshold) {}
+  HybridSmoother(const std::optional<double> marginalThreshold = {})
+      : marginalThreshold_(marginalThreshold) {}
+
+  /// Return fixed values:
+  const DiscreteValues& fixedValues() const { return fixedValues_; }
+
+  /**
+   * Re-initialize the smoother from a new hybrid Bayes Net.
+   */
+  void reInitialize(HybridBayesNet&& hybridBayesNet);
+
+  /**
+   * Re-initialize the smoother from
+   * a new hybrid Bayes Net (non rvalue version).
+   */
+  void reInitialize(HybridBayesNet& hybridBayesNet);
 
   /**
    * Given new factors, perform an incremental update.
@@ -105,6 +119,9 @@ class GTSAM_EXPORT HybridSmoother {
 
   /// Return the Bayes Net posterior.
   const HybridBayesNet& hybridBayesNet() const;
+
+  /// Optimize the hybrid Bayes Net, taking into accound fixed values.
+  HybridValues optimize() const;
 };
 
 }  // namespace gtsam
