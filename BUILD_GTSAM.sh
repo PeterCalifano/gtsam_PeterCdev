@@ -143,6 +143,20 @@ while true; do
   esac
 done
 
+  # Install dependencies (should add check if already installed)
+  if [ "${install_deps}" = true ]; then
+    sudo apt update
+    sudo apt install libboost1.74-all-dev cmake libtbb-dev -y
+    sudo apt install libboost-all-dev cmake libtbb-dev -y
+    sudo apt install gcc-11 g++-11
+
+    # NEED TO ADD IF "not installed" for the following:
+    #sudo apt-get install python3-pip -y 
+    #sudo apt-get install python-is-python3 -y
+    #pip install pyparsing numpy 
+    sudo apt-get install libeigen3-dev -y
+  fi
+
 if [ "${rebuild}" = true ]; then
   # REBUILDING FROM EXISTING BUILD
   if [ "${IS_BUILDPATH_DEFAULT}" = true ]; then
@@ -208,21 +222,6 @@ else
   echo -e "\tBuild GTSAM with expmap: ${WITH_EXPMAP}"
   echo -e "\tUsing Tangent Preintegration: ${USE_TANGENT_PREINTEGR}"
   sleep 1
-
-  # Install dependencies (should add check if already installed)
-  if [ "${install-deps}" = true ]; then
-    sudo apt update
-    sudo apt install libboost1.74-all-dev cmake libtbb-dev -y
-    #sudo apt install libboost-all-dev cmake libtbb-dev -y
-    sudo apt install gcc-11 g++-11
-
-    # NEED TO ADD IF "not installed" for the following:
-    #sudo apt-get install python3-pip -y 
-    #sudo apt-get install python-is-python3 -y
-    #pip install pyparsing numpy 
-    sudo apt-get install libeigen3-dev -y
-  fi
-
 
   if  [ -d $Buildpath ]; then
       sudo rm -r ${Buildpath}/
