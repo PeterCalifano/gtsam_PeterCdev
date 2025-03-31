@@ -82,6 +82,21 @@ Vector1 Rot2::Logmap(const Rot2& r, OptionalJacobian<1, 1> H) {
   return v;
 }
 /* ************************************************************************* */
+Matrix2 Rot2::Hat(const Vector1& xi) {
+  Matrix2 X;
+  X << 0., -xi.x(),
+    xi.x(), 0.;
+  return X;
+}
+
+/* ************************************************************************* */
+Vector1 Rot2::Vee(const Matrix2& X) {
+  TangentVector v;
+  v << X(1, 0);
+  return v;
+}
+
+/* ************************************************************************* */
 Matrix2 Rot2::matrix() const {
   Matrix2 rvalue_;
   rvalue_ <<  c_, -s_, s_, c_;
@@ -140,6 +155,22 @@ Rot2 Rot2::ClosestTo(const Matrix2& M) {
   double c = M_prime(0, 0);
   double s = M_prime(1, 0);
   return Rot2::fromCosSin(c, s);
+}
+
+/* ************************************************************************* */
+Vector4 Rot2::vec(OptionalJacobian<4, 1> H) const {
+  // Vectorize
+  const Matrix2 M = matrix();
+  const Vector4 X = Eigen::Map<const Vector4>(M.data());
+
+  // If requested, calculate H as (I_3 \oplus M) * G.
+  if (H) {
+    static const Matrix41 G = (Matrix41() << 0, 1, -1, 0).finished();
+    for (size_t i = 0; i < 2; i++)
+      H->block(i * 2, 0, 2, dimension) = M * G.block(i * 2, 0, 2, dimension);
+  }
+
+  return X;
 }
 
 /* ************************************************************************* */

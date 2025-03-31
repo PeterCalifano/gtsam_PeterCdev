@@ -152,7 +152,11 @@ class HybridBayesNet {
   gtsam::HybridGaussianFactorGraph toFactorGraph(
       const gtsam::VectorValues& measurements) const;
 
+  gtsam::GaussianBayesNet choose(const gtsam::DiscreteValues& assignment) const;
+
   gtsam::HybridValues optimize() const;
+  gtsam::VectorValues optimize(const gtsam::DiscreteValues& assignment) const;
+
   gtsam::HybridValues sample(const gtsam::HybridValues& given) const;
   gtsam::HybridValues sample() const;
 
@@ -279,9 +283,15 @@ class HybridSmoother {
   void reInitialize(gtsam::HybridBayesNet& hybridBayesNet);
 
   void update(
-      const gtsam::HybridGaussianFactorGraph& graph,
+      const gtsam::HybridNonlinearFactorGraph& graph,
+      const gtsam::Values& initial,
       std::optional<size_t> maxNrLeaves = std::nullopt,
       const std::optional<gtsam::Ordering> given_ordering = std::nullopt);
+
+  void relinearize();
+
+  gtsam::Values linearizationPoint() const;
+  gtsam::HybridNonlinearFactorGraph allFactors() const;
 
   gtsam::Ordering getOrdering(const gtsam::HybridGaussianFactorGraph& factors,
                               const gtsam::KeySet& newFactorKeys);

@@ -204,6 +204,20 @@ Pose2 Pose2::inverse() const {
 }
 
 /* ************************************************************************* */
+Matrix3 Pose2::Hat(const Pose2::TangentVector& xi) {
+  Matrix3 X;
+  X << 0., -xi.z(), xi.x(),
+    xi.z(), 0., xi.y(),
+    0., 0., 0.;
+  return X;
+}
+
+/* ************************************************************************* */
+Pose2::TangentVector Pose2::Vee(const Matrix3& X) {
+  return TangentVector(X(0, 2), X(1, 2), X(1,0));
+}
+
+/* ************************************************************************* */
 // see doc/math.lyx, SE(2) section
 Point2 Pose2::transformTo(const Point2& point,
     OptionalJacobian<2, 3> Hpose, OptionalJacobian<2, 2> Hpoint) const {
@@ -307,6 +321,32 @@ double Pose2::range(const Pose2& pose,
       *Hother = D_r_d * D_d_other;
   }
   return r;
+}
+
+/* ************************************************************************* */
+// Compute vectorized Lie algebra generators for SE(2)
+static Matrix93 VectorizedGenerators() {
+  Matrix93 G;
+  for (size_t j = 0; j < 3; j++) {
+    const Matrix3 X = Pose2::Hat(Vector::Unit(3, j));
+    G.col(j) = Eigen::Map<const Vector9>(X.data());
+  }
+  return G;
+}
+
+Vector9 Pose2::vec(OptionalJacobian<9, 3> H) const {
+  // Vectorize
+  const Matrix3 M = matrix();
+  const Vector9 X = Eigen::Map<const Vector9>(M.data());
+
+  // If requested, calculate H as (I_3 \oplus M) * G.
+  if (H) {
+    static const Matrix93 G = VectorizedGenerators(); // static to compute only once
+    for (size_t i = 0; i < 3; i++)
+      H->block(i * 3, 0, 3, dimension) = M * G.block(i * 3, 0, 3, dimension);
+  }
+
+  return X;
 }
 
 /* *************************************************************************

@@ -132,11 +132,16 @@ public:
    * @param T End point of interpolation.
    * @param t A value in [0, 1].
    */
-  Pose3 interpolateRt(const Pose3& T, double t) const;
+  Pose3 interpolateRt(const Pose3& T, double t,
+                      OptionalJacobian<6, 6> Hself = {},
+                      OptionalJacobian<6, 6> Harg = {},
+                      OptionalJacobian<6, 1> Ht = {}) const;
 
   /// @}
   /// @name Lie Group
   /// @{
+
+  using LieAlgebra = Matrix4;
 
   /// Exponential map at identity - create a rotation from canonical coordinates \f$ [R_x,R_y,R_z,T_x,T_y,T_z] \f$
   static Pose3 Expmap(const Vector6& xi, OptionalJacobian<6, 6> Hxi = {});
@@ -227,16 +232,16 @@ public:
   using LieGroup<Pose3, 6>::inverse; // version with derivative
 
   /**
-   * wedge for Pose3:
+   * Hat for Pose3:
    * @param xi 6-dim twist (omega,v) where
    *  omega = (wx,wy,wz) 3D angular velocity
    *  v (vx,vy,vz) = 3D velocity
    * @return xihat, 4*4 element of Lie algebra that can be exponentiated
    */
-  static Matrix wedge(double wx, double wy, double wz, double vx, double vy,
-      double vz) {
-    return (Matrix(4, 4) << 0., -wz, wy, vx, wz, 0., -wx, vy, -wy, wx, 0., vz, 0., 0., 0., 0.).finished();
-  }
+  static Matrix4 Hat(const Vector6& xi);
+
+  /// Vee maps from Lie algebra to tangent vector
+  static Vector6 Vee(const Matrix4& X);
 
   /// @}
   /// @name Group Action on Point3
@@ -387,9 +392,25 @@ public:
   Pose3 slerp(double t, const Pose3& other, OptionalJacobian<6, 6> Hx = {},
                                              OptionalJacobian<6, 6> Hy = {}) const;
 
+  /// Return vectorized SE(3) matrix in column order.
+  Vector vec(OptionalJacobian<16, 6> H = {}) const;
+
   /// Output stream operator
   GTSAM_EXPORT
   friend std::ostream &operator<<(std::ostream &os, const Pose3& p);
+
+  /// @}
+  /// @name deprecated
+  /// @{
+
+#ifdef GTSAM_ALLOW_DEPRECATED_SINCE_V43
+  /// @deprecated: use Hat
+  static inline LieAlgebra wedge(double wx, double wy, double wz, double vx,
+                                 double vy, double vz) {
+    return Hat((TangentVector() << wx, wy, wz, vx, vy, vz).finished());
+  }
+#endif
+  /// @}
 
  private:
 #if GTSAM_ENABLE_BOOST_SERIALIZATION
@@ -411,17 +432,14 @@ public:
 };
 // Pose3 class
 
-/**
- * wedge for Pose3:
- * @param xi 6-dim twist (omega,v) where
- *  omega = 3D angular velocity
- *  v = 3D velocity
- * @return xihat, 4*4 element of Lie algebra that can be exponentiated
- */
+#ifdef GTSAM_ALLOW_DEPRECATED_SINCE_V43
+/// @deprecated: use T::Hat
 template<>
 inline Matrix wedge<Pose3>(const Vector& xi) {
-  return Pose3::wedge(xi(0), xi(1), xi(2), xi(3), xi(4), xi(5));
+  // NOTE(chris): Need eval() as workaround for Apple clang + avx2.
+  return Matrix(Pose3::Hat(xi)).eval();
 }
+#endif
 
 // Convenience typedef
 using Pose3Pair = std::pair<Pose3, Pose3>;
@@ -431,10 +449,10 @@ using Pose3Pairs = std::vector<std::pair<Pose3, Pose3> >;
 typedef std::vector<Pose3> Pose3Vector;
 
 template <>
-struct traits<Pose3> : public internal::LieGroup<Pose3> {};
+struct traits<Pose3> : public internal::MatrixLieGroup<Pose3> {};
 
 template <>
-struct traits<const Pose3> : public internal::LieGroup<Pose3> {};
+struct traits<const Pose3> : public internal::MatrixLieGroup<Pose3> {};
 
 // bearing and range traits, used in RangeFactor
 template <>
