@@ -25,8 +25,8 @@ PYTHON_EXE=$HOME/miniconda3/home/peterc/miniconda3/envs/gtsam/bin/python3.12 # D
 
 # Parse options using getopt
 # NOTE: no ":" after option means no argument, ":" means required argument, "::" means optional argument
-OPTIONS=B::,j::,w,i,r,t::,c,f::,p::,m::,u,e,o
-LONGOPTIONS=Buildpath::,jobs::,with-dynamics-module,install-deps,rebuild,type-build::,checks,flagsCXX::,python-wrap::,matlab-wrap::,unstable_build,exp_map_enabled,on_manifold_preintegr
+OPTIONS=B::,j::,i,r,t::,c,f::,p::,m::,u,e,o
+LONGOPTIONS=Buildpath::,jobs::,install-deps,rebuild,type-build::,checks,flagsCXX::,python-wrap::,matlab-wrap::,unstable_build,exp_map_enabled,on_manifold_preintegr
 
 # Parsed arguments list with getopt
 PARSED=$(getopt --options ${OPTIONS} --longoptions ${LONGOPTIONS} --name "$0" -- "$@")
@@ -64,10 +64,6 @@ while true; do
         jobs=4
         shift
       fi
-      ;;
-    -w|--with-dynamics-module)
-      WITH_DYNAMICS_MODULE=true
-      shift
       ;;
     -i|--install-deps)
       install_deps=true
