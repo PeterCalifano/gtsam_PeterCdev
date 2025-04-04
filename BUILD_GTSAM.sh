@@ -21,11 +21,12 @@ WITH_MATLAB=false
 WITH_UNSTABLE=false
 WITH_EXPMAP=true
 USE_TANGENT_PREINTEGR=true
+PYTHON_EXE=$HOME/miniconda3/home/peterc/miniconda3/envs/gtsam/bin/python3.12 # Default assumes there is a conda environment in "$HOME/miniconda3"
 
 # Parse options using getopt
 # NOTE: no ":" after option means no argument, ":" means required argument, "::" means optional argument
-OPTIONS=B::,j::,w,i,r,t::,c,f::,p::,m::,u,e,o
-LONGOPTIONS=Buildpath::,jobs::,with-dynamics-module,install-deps,rebuild,type-build::,checks,flagsCXX::,python-wrap::,matlab-wrap::,unstable_build,exp_map_enabled,on_manifold_preintegr
+OPTIONS=B::,j::,i,r,t::,c,f::,p::,m::,u,e,o
+LONGOPTIONS=Buildpath::,jobs::,install-deps,rebuild,type-build::,checks,flagsCXX::,python-wrap::,matlab-wrap::,unstable_build,exp_map_enabled,on_manifold_preintegr
 
 # Parsed arguments list with getopt
 PARSED=$(getopt --options ${OPTIONS} --longoptions ${LONGOPTIONS} --name "$0" -- "$@")
@@ -63,10 +64,6 @@ while true; do
         jobs=4
         shift
       fi
-      ;;
-    -w|--with-dynamics-module)
-      WITH_DYNAMICS_MODULE=true
-      shift
       ;;
     -i|--install-deps)
       install_deps=true
@@ -143,20 +140,6 @@ while true; do
   esac
 done
 
-  # Install dependencies (should add check if already installed)
-  if [ "${install_deps}" = true ]; then
-    sudo apt update
-    sudo apt install libboost1.74-all-dev cmake libtbb-dev -y
-    sudo apt install libboost-all-dev cmake libtbb-dev -y
-    sudo apt install gcc-11 g++-11
-
-    # NEED TO ADD IF "not installed" for the following:
-    #sudo apt-get install python3-pip -y 
-    #sudo apt-get install python-is-python3 -y
-    #pip install pyparsing numpy 
-    sudo apt-get install libeigen3-dev -y
-  fi
-
 if [ "${rebuild}" = true ]; then
   # REBUILDING FROM EXISTING BUILD
   if [ "${IS_BUILDPATH_DEFAULT}" = true ]; then
@@ -168,6 +151,7 @@ if [ "${rebuild}" = true ]; then
   echo -e "\tBuild Type: ${BUILD_TYPE}"
   echo -e "\tEnforced compile flags: ${ADD_CXX_FLAGS}"
   echo -e "\tPython wrapper build: ${WITH_PYTHON}"
+  echo -e "\tPython executable path: ${PYTHON_EXE}"
   echo -e "\tMATLAB wrapper build: ${WITH_MATLAB}"
   echo -e "\tWith Dynamics Module: ${WITH_DYNAMICS_MODULE}"
   echo -e "\tBuild GTSAM unstable: ${WITH_UNSTABLE}"
@@ -193,6 +177,7 @@ if [ "${rebuild}" = true ]; then
     sudo cmake ${Buildpath} -DCMAKE_CXX_FLAGS=${ADD_CXX_FLAGS} \
     -DCMAKE_C_FLAGS=${ADD_CXX_FLAGS} \
     -DGTSAM_BUILD_PYTHON=${WITH_PYTHON} \
+    -DPYTHON_EXECUTABLE=${PYTHON_EXE} \
     -DGTSAM_INSTALL_MATLAB_TOOLBOX=${WITH_MATLAB} \
     -DGTSAM_BUILD_UNSTABLE:OPTION=${WITH_UNSTABLE} \
 
@@ -222,6 +207,21 @@ else
   echo -e "\tBuild GTSAM with expmap: ${WITH_EXPMAP}"
   echo -e "\tUsing Tangent Preintegration: ${USE_TANGENT_PREINTEGR}"
   sleep 1
+
+  # Install dependencies (should add check if already installed)
+  if [ "${install-deps}" = true ]; then
+    sudo apt update
+    sudo apt install libboost1.74-all-dev cmake libtbb-dev -y
+    #sudo apt install libboost-all-dev cmake libtbb-dev -y
+    sudo apt install gcc-11 g++-11
+
+    # NEED TO ADD IF "not installed" for the following:
+    #sudo apt-get install python3-pip -y 
+    #sudo apt-get install python-is-python3 -y
+    #pip install pyparsing numpy 
+    sudo apt-get install libeigen3-dev -y
+  fi
+
 
   if  [ -d $Buildpath ]; then
       sudo rm -r ${Buildpath}/
