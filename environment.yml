@@ -144,7 +144,7 @@ dependencies:
       - pyparsing==3.2.3
       - pytest==8.3.5
       - python-dateutil==2.9.0.post0
-      - pytorchautoforge==0.1.0.dev42+g09d2d30
+      - pytorchautoforge==0.1.2.post1.dev1
       - pytz==2025.2
       - pyyaml==6.0.2
       - requests==2.32.3
