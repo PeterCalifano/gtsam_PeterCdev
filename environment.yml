@@ -22,6 +22,7 @@ dependencies:
   - mkl_fft=1.3.11=py312h5eee18b_0
   - mkl_random=1.2.8=py312h526ad5a_0
   - ncurses=6.4=h6a678d5_0
+  - numpy=2.0.1=py312hc5e2394_1
   - numpy-base=2.0.1=py312h0da6c21_1
   - openssl=3.0.16=h5eee18b_0
   - pip=25.0=py312h06a4308_0
@@ -39,7 +40,6 @@ dependencies:
       - albucore==0.0.23
       - albumentations==1.4.24
       - alembic==1.15.2
-      - annotated-types==0.7.0
       - audioread==3.0.1
       - blinker==1.9.0
       - cachetools==5.5.2
@@ -97,7 +97,6 @@ dependencies:
       - mlflow==2.19.0
       - mlflow-skinny==2.19.0
       - mpmath==1.3.0
-      - msgpack==1.1.0
       - mypy==1.15.0
       - mypy-extensions==1.0.0
       - networkx==3.4.2
@@ -105,7 +104,6 @@ dependencies:
       - nirtorch==2.0.2
       - norse==1.1.0
       - numba==0.61.0
-      - numpy==1.26.4
       - nvidia-cublas-cu12==12.4.5.8
       - nvidia-cuda-cupti-cu12==12.4.127
       - nvidia-cuda-nvrtc-cu12==12.4.127
@@ -138,6 +136,7 @@ dependencies:
       - pyarrow==18.1.0
       - pyasn1==0.6.1
       - pyasn1-modules==0.4.2
+      - pybind11-stubgen==2.5.3
       - pycparser==2.22
       - pydantic==2.11.1
       - pydantic-core==2.33.0
