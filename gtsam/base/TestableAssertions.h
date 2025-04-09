@@ -35,7 +35,7 @@ namespace gtsam {
 inline bool assert_equal(const Key& expected, const Key& actual) {
   // TODO - why isn't tol used?
   if(expected != actual) {
-    std::cout << "Not equal:\nexpected: " << expected << "\nactual: " << actual << std::endl;
+    std::cout << "Equality assertion: \n Expected: " << expected << "\n Actual: " << actual << std::endl;
     return false;
   }
   return true;
@@ -305,9 +305,9 @@ bool assert_container_equality(const V& expected, const V& actual) {
 inline bool assert_equal(const std::string& expected, const std::string& actual) {
   if (expected == actual)
     return true;
-  printf("Not equal:\n");
-  std::cout << "expected: [" << expected << "]\n";
-  std::cout << "actual: [" << actual << "]" << std::endl;
+  printf("Equality assertion :\n");
+  std::cout << " Expected: [" << expected << "]\n";
+  std::cout << " Actual: [" << actual << "]" << std::endl;
   return false;
 }
 
@@ -318,9 +318,9 @@ template<class V>
 bool assert_inequal(const V& expected, const V& actual, double tol = 1e-9) {
   if (!actual.equals(expected, tol))
     return true;
-  printf("Erroneously equal:\n");
-  expected.print("expected");
-  actual.print("actual");
+  printf("Inquality assertion: \n");
+  expected.print(" Expected");
+  actual.print(" Actual");
   return false;
 }
 

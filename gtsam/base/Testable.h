@@ -99,9 +99,9 @@ namespace gtsam {
   bool assert_equal(const V& expected, const V& actual, double tol = 1e-9) {
     if (traits<V>::Equals(actual,expected, tol))
       return true;
-    printf("Not equal:\n");
-    traits<V>::Print(expected,"expected:\n");
-    traits<V>::Print(actual,"actual:\n");
+    printf("Equality assertion: \n");
+    traits<V>::Print(expected," Expected:\n");
+    traits<V>::Print(actual," Actual:\n");
     return false;
   }
 
