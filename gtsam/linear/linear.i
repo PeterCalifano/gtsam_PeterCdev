@@ -657,6 +657,21 @@ virtual class GaussianBayesNet {
 };
 
 #include <gtsam/linear/GaussianBayesTree.h>
+class GaussianBayesTreeClique {
+  GaussianBayesTreeClique();
+  GaussianBayesTreeClique(const gtsam::GaussianConditional* conditional);
+  bool equals(const gtsam::GaussianBayesTreeClique& other, double tol) const;
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter);
+  const gtsam::GaussianConditional* conditional() const;
+  bool isRoot() const;
+  gtsam::GaussianBayesTreeClique* parent() const;
+  size_t nrChildren() const;
+  gtsam::GaussianBayesTreeClique* operator[](size_t j) const;
+  size_t treeSize() const;
+  size_t numCachedSeparatorMarginals() const;
+  void deleteCachedShortcuts();
+};
 virtual class GaussianBayesTree {
   // Standard Constructors and Named Constructors
   GaussianBayesTree();
@@ -666,6 +681,8 @@ virtual class GaussianBayesTree {
                                 gtsam::DefaultKeyFormatter);
   size_t size() const;
   bool empty() const;
+  const GaussianBayesTree::Roots& roots() const;
+  const gtsam::GaussianBayesTreeClique* operator[](size_t j) const;
   size_t numCachedSeparatorMarginals() const;
 
   string dot(const gtsam::KeyFormatter& keyFormatter =
@@ -687,15 +704,37 @@ virtual class GaussianBayesTree {
   gtsam::GaussianBayesNet* jointBayesNet(size_t key1, size_t key2) const;
 };
 
+#include <gtsam/linear/GaussianEliminationTree.h>
+virtual class GaussianEliminationTree {
+  GaussianEliminationTree(const gtsam::GaussianFactorGraph& factorGraph,
+    const gtsam::VariableIndex& structure, const gtsam::Ordering& order);
+  GaussianEliminationTree(const gtsam::GaussianFactorGraph& factorGraph,
+    const gtsam::Ordering& order);
+
+  bool equals(const This& other, double tol) const;
+
+  void print(const string name = "GaussianEliminationTree: ",
+    const gtsam::KeyFormatter& formatter = gtsam::DefaultKeyFormatter) const;
+};
+
 #include <gtsam/linear/GaussianISAM.h>
 class GaussianISAM {
   //Constructor
   GaussianISAM();
+  GaussianISAM(const gtsam::GaussianBayesTree& bayesTree);
+
+  gtsam::VectorValues optimize() const;
+  gtsam::VectorValues optimizeGradientSearch() const;
+
+  gtsam::GaussianConditional* marginalFactor(size_t key) const;
 
   //Standard Interface
   void update(const gtsam::GaussianFactorGraph& newFactors);
   void saveGraph(string s) const;
   void clear();
+
+  void print(const string name = "GaussianISAM: ",
+    const gtsam::KeyFormatter& formatter = gtsam::DefaultKeyFormatter) const;
 };
 
 #include <gtsam/linear/IterativeSolver.h>
