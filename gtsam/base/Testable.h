@@ -36,6 +36,7 @@
 #include <gtsam/base/concepts.h>
 
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -100,8 +101,10 @@ namespace gtsam {
     if (traits<V>::Equals(actual,expected, tol))
       return true;
     printf("Equality assertion: \n");
-    traits<V>::Print(expected," Expected:\n");
-    traits<V>::Print(actual," Actual:\n");
+    std::cout << std::setprecision(8) << std::scientific;
+    traits<V>::Print(expected, " Expected:\n");
+    traits<V>::Print(actual, " Actual:\n");
+    std::cout << std::setprecision(5) << std::defaultfloat;
     return false;
   }
 
