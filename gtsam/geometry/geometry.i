@@ -175,7 +175,7 @@ class Rot2 {
   static gtsam::Rot2 Expmap(gtsam::Vector v);
   static gtsam::Vector Logmap(const gtsam::Rot2& r);
   gtsam::Rot2 expmap(gtsam::Vector v);
-  gtsam::Vector logmap(const gtsam::Rot2& p);
+  gtsam::Vector logmap(const gtsam::Rot2& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
@@ -258,7 +258,7 @@ class SO3 {
   static gtsam::Matrix3 ExpmapDerivative(const gtsam::Vector3& omega);
   static gtsam::Matrix3 LogmapDerivative(const gtsam::Vector3& omega);
   gtsam::SO3 expmap(gtsam::Vector3 v);
-  gtsam::Vector3 logmap(const gtsam::SO3& p);
+  gtsam::Vector3 logmap(const gtsam::SO3& g);
   static gtsam::Matrix3 Hat(const gtsam::Vector3& xi);
   static gtsam::Vector3 Vee(const gtsam::Matrix3& xi);
 
@@ -295,7 +295,7 @@ class SO4 {
   static gtsam::SO4 Expmap(gtsam::Vector v);
   static gtsam::Vector Logmap(const gtsam::SO4& p);
   gtsam::SO4 expmap(gtsam::Vector v);
-  gtsam::Vector logmap(const gtsam::SO4& p);
+  gtsam::Vector logmap(const gtsam::SO4& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& xi);
 
@@ -333,7 +333,7 @@ class SOn {
   static gtsam::SOn Expmap(gtsam::Vector v);
   static gtsam::Vector Logmap(const gtsam::SOn& p);
   gtsam::SOn expmap(gtsam::Vector v);
-  gtsam::Vector logmap(const gtsam::SOn& p);
+  gtsam::Vector logmap(const gtsam::SOn& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& xi);
 
@@ -413,7 +413,7 @@ class Rot3 {
   static gtsam::Matrix3 ExpmapDerivative(const gtsam::Vector3& omega);
   static gtsam::Matrix3 LogmapDerivative(const gtsam::Vector3& omega);
   gtsam::Rot3 expmap(const gtsam::Vector& v);
-  gtsam::Vector logmap(const gtsam::Rot3& p);
+  gtsam::Vector logmap(const gtsam::Rot3& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
@@ -487,8 +487,8 @@ class Pose2 {
   static gtsam::Vector Logmap(const gtsam::Pose2& p, Eigen::Ref<Eigen::MatrixXd> H);
   gtsam::Pose2 expmap(gtsam::Vector v);
   gtsam::Pose2 expmap(gtsam::Vector v, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
-  gtsam::Vector logmap(const gtsam::Pose2& p);
-  gtsam::Vector logmap(const gtsam::Pose2& p, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
+  gtsam::Vector logmap(const gtsam::Pose2& g);
+  gtsam::Vector logmap(const gtsam::Pose2& g, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
   static gtsam::Matrix ExpmapDerivative(gtsam::Vector v);
   static gtsam::Matrix LogmapDerivative(const gtsam::Pose2& v);
   gtsam::Matrix AdjointMap() const;
@@ -576,8 +576,9 @@ class Pose3 {
 
   gtsam::Pose3 expmap(gtsam::Vector v);
   gtsam::Pose3 expmap(gtsam::Vector v, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
-  gtsam::Vector logmap(const gtsam::Pose3& p);
-  gtsam::Vector logmap(const gtsam::Pose3& p, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
+  
+  gtsam::Vector logmap(const gtsam::Pose3& g);
+  gtsam::Vector logmap(const gtsam::Pose3& g, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
 
   gtsam::Matrix AdjointMap() const;
   gtsam::Vector Adjoint(gtsam::Vector xi_b) const;
@@ -783,10 +784,6 @@ virtual class Cal3 {
   gtsam::Vector vector() const;
   gtsam::Matrix K() const;
   gtsam::Matrix inverse() const;
-
-  // Manifold
-  static size_t Dim();
-  size_t dim() const;
 };
 
 #include <gtsam/geometry/Cal3_S2.h>
@@ -817,6 +814,9 @@ virtual class Cal3_S2 : gtsam::Cal3 {
                             Eigen::Ref<Eigen::MatrixXd> Dcal,
                             Eigen::Ref<Eigen::MatrixXd> Dp) const;
 
+  // Action on Homogeneous Coordinates
+  gtsam::Vector3 calibrate(const gtsam::Vector3& p) const;
+
   // enabling serialization functionality
   void serialize() const;
 };
@@ -832,6 +832,10 @@ virtual class Cal3DS2_Base : gtsam::Cal3 {
   // Standard Interface
   double k1() const;
   double k2() const;
+  double p1() const;
+  double p2() const;
+  gtsam::Vector4 k() const;
+  gtsam::Vector9 vector() const;
 
   // Action on Point2
   gtsam::Point2 uncalibrate(const gtsam::Point2& p) const;
@@ -947,11 +951,12 @@ virtual class Cal3Fisheye : gtsam::Cal3 {
 };
 
 #include <gtsam/geometry/Cal3_S2Stereo.h>
-virtual class Cal3_S2Stereo   : gtsam::Cal3{
+virtual class Cal3_S2Stereo : gtsam::Cal3_S2{
   // Standard Constructors
   Cal3_S2Stereo();
   Cal3_S2Stereo(double fx, double fy, double s, double u0, double v0, double b);
   Cal3_S2Stereo(gtsam::Vector v);
+  Cal3_S2Stereo(double fov, int w, int h, double b);
 
   // Manifold
   gtsam::Cal3_S2Stereo retract(gtsam::Vector d) const;
@@ -964,6 +969,16 @@ virtual class Cal3_S2Stereo   : gtsam::Cal3{
   // Standard Interface
   double baseline() const;
   gtsam::Vector6 vector() const;
+
+  // Action on Point2
+  gtsam::Point2 calibrate(const gtsam::Point2& p) const;
+  gtsam::Point2 calibrate(const gtsam::Point2& p,
+                          Eigen::Ref<Eigen::MatrixXd> Dcal,
+                          Eigen::Ref<Eigen::MatrixXd> Dp) const;
+  gtsam::Point2 uncalibrate(const gtsam::Point2& p) const;
+  gtsam::Point2 uncalibrate(const gtsam::Point2& p,
+                            Eigen::Ref<Eigen::MatrixXd> Dcal,
+                            Eigen::Ref<Eigen::MatrixXd> Dp) const;
 };
 
 #include <gtsam/geometry/Cal3Bundler.h>
@@ -1268,11 +1283,26 @@ class Similarity2 {
   static gtsam::Similarity2 Align(const gtsam::Point2Pairs& abPointPairs);
   static gtsam::Similarity2 Align(const gtsam::Pose2Pairs& abPosePairs);
 
+  // Group
+  static gtsam::Similarity2 Identity();
+  gtsam::Similarity2 inverse() const;
+  gtsam::Similarity2 compose(const gtsam::Similarity2& other) const;
+  gtsam::Similarity2 between(const gtsam::Similarity2& other) const;
+
+  // Operator Overloads
+  gtsam::Similarity2 operator*(const gtsam::Similarity2& other) const;
+
+  // Manifold
+  gtsam::Similarity2 retract(gtsam::Vector v) const;
+  gtsam::Vector localCoordinates(const gtsam::Similarity2& t2) const;
+  size_t dim() const;
+  static size_t Dim();
+
   // Lie group
   static gtsam::Similarity2 Expmap(gtsam::Vector v);
   static gtsam::Vector Logmap(const gtsam::Similarity2& S);
   gtsam::Similarity2 expmap(const gtsam::Vector& v);
-  gtsam::Vector logmap(const gtsam::Similarity2& p);
+  gtsam::Vector logmap(const gtsam::Similarity2& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
@@ -1300,11 +1330,26 @@ class Similarity3 {
   static gtsam::Similarity3 Align(const gtsam::Point3Pairs& abPointPairs);
   static gtsam::Similarity3 Align(const gtsam::Pose3Pairs& abPosePairs);
 
+  // Group
+  static gtsam::Similarity3 Identity();
+  gtsam::Similarity3 inverse() const;
+  gtsam::Similarity3 compose(const gtsam::Similarity3& other) const;
+  gtsam::Similarity3 between(const gtsam::Similarity3& other) const;
+
+  // Operator Overloads
+  gtsam::Similarity3 operator*(const gtsam::Similarity3& other) const;
+
+  // Manifold
+  gtsam::Similarity3 retract(gtsam::Vector v) const;
+  gtsam::Vector localCoordinates(const gtsam::Similarity3& t2) const;
+  size_t dim() const;
+  static size_t Dim();
+
   // Lie group
   static gtsam::Similarity3 Expmap(gtsam::Vector v);
   static gtsam::Vector Logmap(const gtsam::Similarity3& s);
   gtsam::Similarity3 expmap(const gtsam::Vector& v);
-  gtsam::Vector logmap(const gtsam::Similarity3& p);
+  gtsam::Vector logmap(const gtsam::Similarity3& g);
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
@@ -1315,6 +1360,47 @@ class Similarity3 {
   gtsam::Rot3& rotation();
   gtsam::Point3& translation();
   double scale() const;
+};
+
+#include <gtsam/geometry/Gal3.h>
+class Gal3 {
+  // Standard Constructors
+  Gal3();
+  Gal3(const gtsam::Rot3& R, const gtsam::Point3& r, const gtsam::Vector3& v, double t);
+  Gal3(const gtsam::Matrix5& M);
+
+  // Testable
+  void print(string s = "") const;
+  bool equals(const gtsam::Gal3& other, double tol) const;
+
+  // Group
+  static gtsam::Gal3 Identity();
+  gtsam::Gal3 inverse() const;
+  gtsam::Gal3 compose(const gtsam::Gal3& other) const;
+  gtsam::Gal3 between(const gtsam::Gal3& other) const;
+
+  // Operator Overloads
+  gtsam::Gal3 operator*(const gtsam::Gal3& other) const;
+
+  // Lie Group
+  static gtsam::Gal3 Expmap(const gtsam::Vector10& xi);
+  static gtsam::Vector10 Logmap(const gtsam::Gal3& g);
+  gtsam::Gal3 expmap(const gtsam::Vector10& xi);
+  gtsam::Vector10 logmap(const gtsam::Gal3& g);
+
+  // Manifold
+  gtsam::Gal3 retract(const gtsam::Vector10& xi) const;
+  gtsam::Vector10 localCoordinates(const gtsam::Gal3& g) const;
+
+  // Component Access
+  const gtsam::Rot3& rotation() const;
+  const gtsam::Point3& translation() const;
+  const gtsam::Vector3& velocity() const;
+  const double& time() const;
+
+  // Other methods
+  gtsam::Matrix5 matrix() const;
+  gtsam::Vector25 vec() const;
 };
 
 template <T = {gtsam::PinholePoseCal3_S2}>

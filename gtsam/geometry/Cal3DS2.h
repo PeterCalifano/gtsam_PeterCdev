@@ -36,7 +36,7 @@ class GTSAM_EXPORT Cal3DS2 : public Cal3DS2_Base {
   using Base = Cal3DS2_Base;
 
  public:
-  inline constexpr static auto dimension = 9;
+  constexpr static auto dimension = 9;
 
   ///< shared pointer to stereo calibration object
   using shared_ptr = std::shared_ptr<Cal3DS2>;
@@ -84,10 +84,10 @@ class GTSAM_EXPORT Cal3DS2 : public Cal3DS2_Base {
   Vector localCoordinates(const Cal3DS2& T2) const;
 
   /// Return dimensions of calibration manifold object
-  size_t dim() const override { return Dim(); }
+  size_t dim() const { return Dim(); }
 
   /// Return dimensions of calibration manifold object
-  inline static size_t Dim() { return dimension; }
+  static size_t Dim() { return dimension; }
 
   /// @}
   /// @name Clone
