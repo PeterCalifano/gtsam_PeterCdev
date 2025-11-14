@@ -23,6 +23,9 @@ WITH_EXPMAP=true
 USE_TANGENT_PREINTEGR=true
 PYTHON_EXE=$HOME/miniconda3/home/peterc/miniconda3/envs/gtsam/bin/python3.12 # Default assumes there is a conda environment in "$HOME/miniconda3"
 
+build_path="build"
+is_default_build_path=true
+
 # Parse options using getopt
 # NOTE: no ":" after option means no argument, ":" means required argument, "::" means optional argument
 OPTIONS=B::,j::,i::,r,t::,c,f::,p,m,u,e,o
@@ -49,11 +52,6 @@ while true; do
         build_path="$2"
         is_default_build_path=false
         shift 2 # Shift of two args, i.e. $1 will then point to the next argument
-      else 
-      # Handle the default case (no optional argument provided), thus shift of 1
-        build_path="build"
-        is_default_build_path=true
-        shift
       fi
       ;;
     -j|--jobs)
