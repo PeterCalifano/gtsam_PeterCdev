@@ -5,8 +5,7 @@
 # Last updated with shell parser by PeterC, July 2024
 
 # NOTE: If -r script is only allowed to change CXX flags and optionally include wrappers.
-set -e # Exit on error
-set -o pipefail # Exit on error in a pipeline
+set -Euo pipefail # Exit on error in a pipeline
 
 # Default values
 build_path=build
@@ -26,7 +25,7 @@ PYTHON_EXE=$HOME/miniconda3/home/peterc/miniconda3/envs/gtsam/bin/python3.12 # D
 
 # Parse options using getopt
 # NOTE: no ":" after option means no argument, ":" means required argument, "::" means optional argument
-OPTIONS=B::,j::,i::,r,t::,c,f::,p::,m::,u,e,o
+OPTIONS=B::,j::,i::,r,t::,c,f::,p,m,u,e,o
 LONGOPTIONS=build_path::,jobs::,install-path::,rebuild,type-build::,checks,flagsCXX::,python-wrap::,matlab-wrap::,unstable_build,exp_map_enabled,on_manifold_preintegr
 
 # Parsed arguments list with getopt
@@ -101,22 +100,12 @@ while true; do
       fi
       ;;
     -p|--python-wrap)  
-      if [ -n "$2" ] && [ "$2" != "--" ]; then
-        WITH_PYTHON="$2"
-        shift 2
-      else
-        WITH_PYTHON=false
-        shift
-      fi
+      WITH_PYTHON=true
+      shift
       ;;
     -m|--matlab-wrap)  
-      if [ -n "$2" ] && [ "$2" != "--" ]; then
-        WITH_MATLAB="$2"
-        shift 2
-      else
-        WITH_MATLAB=false
-        shift
-      fi
+      WITH_MATLAB=true
+      shift
       ;;
     -u|--unstable_build)
       WITH_UNSTABLE=true
