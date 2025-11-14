@@ -12,6 +12,7 @@ namespace gtsam {
 #include <gtsam/geometry/CalibratedCamera.h>
 #include <gtsam/geometry/EssentialMatrix.h>
 #include <gtsam/geometry/FundamentalMatrix.h>
+#include <gtsam/geometry/Gal3.h>
 #include <gtsam/geometry/PinholeCamera.h>
 #include <gtsam/geometry/Point2.h>
 #include <gtsam/geometry/Point3.h>
@@ -24,6 +25,7 @@ namespace gtsam {
 #include <gtsam/geometry/SO3.h>
 #include <gtsam/geometry/SO4.h>
 #include <gtsam/geometry/SOn.h>
+#include <gtsam/geometry/SL4.h>
 #include <gtsam/geometry/StereoPoint2.h>
 #include <gtsam/geometry/Unit3.h>
 #include <gtsam/navigation/ImuBias.h>
@@ -70,9 +72,11 @@ class NonlinearFactorGraph {
                  gtsam::Point2,
                  gtsam::StereoPoint2,
                  gtsam::Point3,
+                 gtsam::Gal3,
                  gtsam::Rot2,
                  gtsam::SO3,
                  gtsam::SO4,
+                 gtsam::SL4,
                  gtsam::Rot3,
                  gtsam::Pose2,
                  gtsam::Pose3,
@@ -547,8 +551,8 @@ class ISAM2 {
   gtsam::Values getLinearizationPoint() const;
   bool valueExists(gtsam::Key key) const;
   gtsam::Values calculateEstimate() const;
-  template <VALUE = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
-                     gtsam::Rot3, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Cal3_S2, gtsam::Cal3DS2,
+  template <VALUE = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3, gtsam::Gal3,
+                     gtsam::Rot3, gtsam::Pose3, gtsam::SL4, gtsam::Similarity2, gtsam::Similarity3, gtsam::Cal3_S2, gtsam::Cal3DS2,
                      gtsam::Cal3f, gtsam::Cal3Bundler, gtsam::imuBias::ConstantBias,
                      gtsam::EssentialMatrix, gtsam::FundamentalMatrix, gtsam::SimpleFundamentalMatrix,
                      gtsam::PinholeCamera<gtsam::Cal3_S2>,
@@ -606,10 +610,12 @@ template <T = {double,
                gtsam::Point2,
                gtsam::StereoPoint2,
                gtsam::Point3,
+               gtsam::Gal3,
                gtsam::Rot2,
                gtsam::SO3,
                gtsam::SO4,
                gtsam::SOn,
+               gtsam::SL4,
                gtsam::Rot3,
                gtsam::Pose2,
                gtsam::Pose3,
@@ -637,9 +643,98 @@ virtual class PriorFactor : gtsam::NoiseModelFactor {
   void serialize() const;
 };
 
+#include <gtsam/nonlinear/ExtendedPriorFactor.h>
+template <T = {double,
+               gtsam::Vector,
+               gtsam::Point2,
+               gtsam::StereoPoint2,
+               gtsam::Point3,
+               gtsam::Gal3,
+               gtsam::Rot2,
+               gtsam::SO3,
+               gtsam::SO4,
+               gtsam::SOn,
+               gtsam::SL4,
+               gtsam::Rot3,
+               gtsam::Pose2,
+               gtsam::Pose3,
+               gtsam::Similarity2,
+               gtsam::Similarity3,
+               gtsam::Unit3,
+               gtsam::Cal3_S2,
+               gtsam::Cal3DS2,
+               gtsam::Cal3Bundler,
+               gtsam::Cal3Fisheye,
+               gtsam::Cal3Unified,
+               gtsam::CalibratedCamera,
+               gtsam::PinholeCamera<gtsam::Cal3_S2>,
+               gtsam::PinholeCamera<gtsam::Cal3Bundler>,
+               gtsam::PinholeCamera<gtsam::Cal3Fisheye>,
+               gtsam::PinholeCamera<gtsam::Cal3Unified>,
+               gtsam::NavState,
+               gtsam::imuBias::ConstantBias}>
+virtual class ExtendedPriorFactor : gtsam::NoiseModelFactor {
+  ExtendedPriorFactor(gtsam::Key key, const T& origin, const gtsam::SharedNoiseModel& noiseModel);
+  ExtendedPriorFactor(gtsam::Key key, const T& origin, const gtsam::Vector& mean, const gtsam::SharedNoiseModel& noiseModel);
+  ExtendedPriorFactor(gtsam::Key key, const T& origin, const gtsam::Matrix& covariance);
+  ExtendedPriorFactor(gtsam::Key key, const T& origin, const gtsam::Vector& mean, const gtsam::Matrix& covariance);
+  T origin() const;
+  // Optional tangent space mean (may be empty / None)
+  std::optional<gtsam::Vector> mean() const;
+  std::optional<gtsam::Matrix> covariance() const;
+  std::optional<std::pair<gtsam::Matrix, gtsam::Matrix>> gaussian() const;
+
+  // T-versions (vs. values)
+  double error(const T& x) const;
+  double likelihood(const T& x) const;
+  gtsam::Vector evaluateError(const T& x) const;
+
+  // enabling serialization functionality
+  void serialize() const;
+};
+
+#include <gtsam/nonlinear/ConcentratedGaussian.h>
+template <T = {double,
+               gtsam::Vector,
+               gtsam::Point2,
+               gtsam::StereoPoint2,
+               gtsam::Point3,
+               gtsam::Gal3,
+               gtsam::Rot2,
+               gtsam::SO3,
+               gtsam::SO4,
+               gtsam::SOn,
+               gtsam::SL4,
+               gtsam::Rot3,
+               gtsam::Pose2,
+               gtsam::Pose3,
+               gtsam::Similarity2,
+               gtsam::Similarity3}>
+class ConcentratedGaussian : gtsam::ExtendedPriorFactor<T> {
+  ConcentratedGaussian();
+  // Constructors mirroring header (origin terminology)
+  ConcentratedGaussian(gtsam::Key key, const T& origin, const gtsam::noiseModel::Gaussian::shared_ptr& noiseModel);
+  ConcentratedGaussian(gtsam::Key key, const T& origin, const gtsam::Vector& mean, const gtsam::noiseModel::Gaussian::shared_ptr& noiseModel);
+  ConcentratedGaussian(gtsam::Key key, const T& origin, const gtsam::Matrix& covariance);
+  ConcentratedGaussian(gtsam::Key key, const T& origin, const gtsam::Vector& mean, const gtsam::Matrix& covariance);
+  // Return element corresponding to mean (no Jacobian variant)
+  T retractMean() const;
+  // Normalization constant (negative log) and log-probability helpers
+  double negLogConstant() const;
+  double logProbability(const T& x) const;
+  double logProbability(const gtsam::Values& values) const;
+  double evaluate(const T& x) const;
+  double evaluate(const gtsam::Values& values) const;
+  // Chart transport / reset operations
+  ConcentratedGaussian reset() const;
+  ConcentratedGaussian transportTo(const T& x_hat) const;
+  // Fusion operator
+  ConcentratedGaussian operator*(const ConcentratedGaussian& other) const;
+};
+
 #include <gtsam/nonlinear/NonlinearEquality.h>
 template <T = {gtsam::Point2, gtsam::StereoPoint2, gtsam::Point3, gtsam::Rot2,
-               gtsam::SO3, gtsam::SO4, gtsam::SOn, gtsam::Rot3, gtsam::Pose2,
+               gtsam::SO3, gtsam::SO4, gtsam::SOn, gtsam::SL4, gtsam::Rot3, gtsam::Pose2, gtsam::Gal3,
                gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Cal3_S2, gtsam::CalibratedCamera,
                gtsam::PinholeCamera<gtsam::Cal3_S2>,
                gtsam::PinholeCamera<gtsam::Cal3Bundler>,
@@ -656,8 +751,8 @@ virtual class NonlinearEquality : gtsam::NoiseModelFactor {
   void serialize() const;
 };
 
-template <T = {gtsam::Point2, gtsam::StereoPoint2, gtsam::Point3, gtsam::Rot2,
-               gtsam::SO3, gtsam::SO4, gtsam::SOn, gtsam::Rot3, gtsam::Pose2,
+template <T = {gtsam::Point2, gtsam::StereoPoint2, gtsam::Point3, gtsam::Rot2, gtsam::Gal3,
+               gtsam::SO3, gtsam::SO4, gtsam::SOn, gtsam::SL4, gtsam::Rot3, gtsam::Pose2,
                gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Cal3_S2, gtsam::CalibratedCamera,
                gtsam::PinholeCamera<gtsam::Cal3_S2>,
                gtsam::PinholeCamera<gtsam::Cal3Bundler>,
@@ -727,8 +822,8 @@ virtual class BatchFixedLagSmoother : gtsam::FixedLagSmoother {
   gtsam::NonlinearFactorGraph getFactors() const;
 
   template <VALUE = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
-                     gtsam::Rot3, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Cal3_S2, gtsam::Cal3DS2,
-                     gtsam::Vector, gtsam::Matrix}>
+                     gtsam::Rot3, gtsam::Pose3, gtsam::SL4, gtsam::Similarity2, gtsam::Similarity3,
+                     gtsam::Cal3_S2, gtsam::Cal3DS2, gtsam::Vector, gtsam::Matrix}>
   VALUE calculateEstimate(gtsam::Key key) const;
 };
 
@@ -754,6 +849,8 @@ template <T = {gtsam::Point2,
                gtsam::Rot3,
                gtsam::Pose2,
                gtsam::Pose3,
+               gtsam::Gal3,
+               gtsam::SL4,
                gtsam::Similarity2,
                gtsam::Similarity3,
                gtsam::NavState,
