@@ -134,7 +134,7 @@ class FormatMixin:
                     formatted_type_name += namespace + separator
 
         if is_constructor:
-            formatted_type_name += self.data_type.get(name) or name
+            formatted_type_name += self.data_type.get(name) or name # FIXME wrapper fails here with new version of GTSAM due to unhashable Typename
         elif is_method:
             formatted_type_name += self.data_type_param.get(name) or name
         else:
