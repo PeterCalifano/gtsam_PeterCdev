@@ -160,12 +160,12 @@ mxArray* wrap<bool>(const bool& value) {
 }
 
 // specialization to size_t
-template<>
-mxArray* wrap<size_t>(const size_t& value) {
-  mxArray *result = scalar(mxUINT32OR64_CLASS);
-  *(size_t*)mxGetData(result) = value;
-  return result;
-}
+//template<>
+//mxArray* wrap<size_t>(const size_t& value) {
+//  mxArray *result = scalar(mxUINT32OR64_CLASS);
+//  *(size_t*)mxGetData(result) = value;
+//  return result;
+//}
 
 // specialization to int
 template<>
@@ -346,11 +346,11 @@ uint64_t unwrap<uint64_t>(const mxArray* array) {
 }
 
 // specialization to size_t
-template<>
-size_t unwrap<size_t>(const mxArray* array) {
-  checkScalar(array, "unwrap<size_t>");
-  return myGetScalar<size_t>(array);
-}
+//template<>
+//size_t unwrap<size_t>(const mxArray* array) {
+//  checkScalar(array, "unwrap<size_t>");
+//  return myGetScalar<size_t>(array);
+//}
 
 // specialization to double
 template<>
