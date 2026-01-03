@@ -1,251 +1,241 @@
 #!/usr/bin/env bash
-# Script to build gtsam with MATLAB/Python interfaces on GNU/Linux.
-# Note: this script assumes it is run from the gtsam root folder.
-# Created January 2024, modified May 2024 for Ubuntu 24.04 TLS by PeterC.
-# Last updated with shell parser by PeterC, July 2024. Cleaned up for clarity.
+# Build helper for GTSAM (Linux)
+# - Aligned with build_lib.sh features (Aug 2025)
+# - Generator-agnostic build via `cmake --build`
 
 set -Eeuo pipefail
+IFS=$'\n\t' # Narrows word splitting to newlines and tabs (safe with spaces)
+
+# --- Defaults ---
+buildpath="build"
+install_path="install"
+
+jobs="${JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
+jobs=$(( jobs < 6 ? jobs : 6 ))
+
+rebuild_only=false
+build_type="relwithdebinfo"   # debug|release|relwithdebinfo|minsizerel
+run_tests=true
+CXX_FLAGS=""
+python_wrap=false
+matlab_wrap=false
+unstable_build=false
+use_expmap=true
+use_tangent_preintegr=true
+install=false
+use_ninja=false
+no_optim=false
+clean_first=false
+toolchain_file=""
+cmake_defines=()
+python_exe="${PYTHON_EXE:-$HOME/miniconda3/envs/gtsam/bin/python3.12}"
 
 usage() {
-  cat <<'EOF'
-Usage: BUILD_GTSAM.sh [options]
-  -B, --build_path [path]        Build directory (default: build; build_dev when rebuilding)
-  -i, --install-path PATH        Install prefix (default: install)
-  -j, --jobs [N]                 Parallel build jobs (default: 3, or 4 if flag provided without value)
-  -r, --rebuild                  Reuse an existing build directory instead of starting clean
-  -t, --type-build [TYPE]        debug | release | relwithdebinfo | minsizerel | test (default: relwithdebinfo)
-  -c, --checks                   Run `make check` (also auto-enabled for release/test types)
-  -f, --flagsCXX [FLAGS]         Extra C/C++ compiler flags
-  -p, --python-wrap              Build Python wrapper
-  -m, --matlab-wrap              Build MATLAB wrapper
-  -u, --unstable_build           Build unstable components
-  -e, --exp_map_disabled         Disable Expmap (Pose3/Rot3)
-  -o, --on_manifold_preintegr    Use on-manifold preintegration instead of tangent
-  -h, --help                     Show this help and exit
+  cat <<'USAGE'
+Usage: build_gtsam.sh [OPTIONS]
+
+Options:
+  -B, --buildpath <dir>         Build directory (default: ./build)
+      --install-path <dir>      Install prefix (default: ./install)
+  -j, --jobs <N>                Parallel build jobs (default: $(nproc or 4))
+  -r, --rebuild-only            Skip CMake configure; build existing tree only
+  -t, --type|--type-build <t>   Build type: debug|release|relwithdebinfo|minsizerel
+  -c, --checks                  Run tests (on by default). Alias of --run-tests
+      --skip-tests              Do not run tests
+  -f, --flagsCXX <flags>        Extra C/C++ flags (quoted). Adds warnings for
+                                Debug/RelWithDebInfo/Release
+  -D, --define <var[=val]>      Extra CMake cache definitions (repeatable)
+  -p, --python-wrap             Build Python wrapper
+  -m, --matlab-wrap             Build MATLAB wrapper
+  -u, --unstable-build          Build unstable components
+  -e, --exp-map-disabled        Disable Expmap (Pose3/Rot3)
+  -o, --on-manifold-preintegr   Use on-manifold preintegration instead of tangent
+  -i, --install                 Run "install" target after tests
+  -N, --ninja-build             Use Ninja generator (requires `ninja`)
+  -n, --no-optim                Set -DNO_OPTIMIZATION=ON in the CMake cache
+      --toolchain <file>        Pass CMake toolchain file (-DCMAKE_TOOLCHAIN_FILE=<file>)
+      --clean                   Delete build dir before configuring
+  -h, --help                    Show this help and exit
 
 Environment:
-  PYTHON_EXE     Override Python executable for wrappers (default: $HOME/miniconda3/envs/gtsam/bin/python3.12)
-EOF
+  PYTHON_EXE  Override Python executable for wrappers
+              (default: $HOME/miniconda3/envs/gtsam/bin/python3.12)
+
+Examples:
+  # Configure + build (RelWithDebInfo) into ./build
+  ./build_gtsam.sh
+
+  # Debug build with warnings, 8 jobs, and Ninja
+  ./build_gtsam.sh -t debug -j 8 -N
+
+  # Custom build dir and flags, run tests then install
+  ./build_gtsam.sh -B out/release -t release -f "-march=native" -i
+USAGE
 }
 
-# Defaults
-build_path="build"
-install_path="install"
-is_default_build_path=true
-jobs=3
-rebuild=false
-BUILD_TYPE="relwithdebinfo"
-ADD_CHECKS=false
-RUN_CHECKS=false
-ADD_CXX_FLAGS=""
-WITH_PYTHON=false
-WITH_MATLAB=false
-WITH_UNSTABLE=false
-WITH_EXPMAP=true
-USE_TANGENT_PREINTEGR=true
-PYTHON_EXE="${PYTHON_EXE:-$HOME/miniconda3/envs/gtsam/bin/python3.12}"
+die()  { echo -e "\e[31mError:\e[0m $*" >&2; echo; usage; exit 2; }
+info() { echo -e "\e[34m[INFO]\e[0m $*"; }
+trap 'echo -e "\e[31mBuild failed (line $LINENO).\e[0m"' ERR
 
-# Option parsing
-OPTIONS=B::,j::,i::,r,t::,c,f::,p,m,u,e,o,h
-LONGOPTIONS=build_path::,jobs::,install-path::,rebuild,type-build::,checks,flagsCXX::,python-wrap,matlab-wrap,unstable_build,exp_map_disabled,on_manifold_preintegr,help
-PARSED=$(getopt --options "${OPTIONS}" --longoptions "${LONGOPTIONS}" --name "$0" -- "$@") || exit 2
-eval set -- "${PARSED}"
+bool_to_cmake() {
+  if [[ "$1" == true ]]; then
+    echo ON
+  else
+    echo OFF
+  fi
+}
+
+# --- argument parsing (GNU getopt) ---
+if ! command -v getopt > /dev/null 2>&1; then
+  die "GNU getopt is required. On macOS: brew install gnu-getopt and adjust PATH."
+fi
+
+OPTIONS=B:j:rt:c:f:D:pmueoiNnh
+LONGOPTIONS=buildpath:,build_path:,build-path:,install-path:,jobs:,rebuild-only,rebuild,type:,type-build:,checks,flagsCXX:,define:,python-wrap,matlab-wrap,unstable-build,unstable_build,exp-map-disabled,exp_map_disabled,on-manifold-preintegr,on_manifold_preintegr,help,ninja-build,no-optim,skip-tests,no-checks,clean,install,toolchain:
+PARSED=$(getopt -o "$OPTIONS" -l "$LONGOPTIONS" -- "$@") || { usage; exit 2; }
+eval set -- "$PARSED"
 
 while true; do
   case "$1" in
-    -B|--build_path)
-      if [ -n "${2-}" ] && [ "$2" != "--" ]; then
-        build_path="$2"
-        is_default_build_path=false
-        shift 2
-      else
-        shift
-      fi
-      ;;
-    -j|--jobs)
-      if [ -n "${2-}" ] && [ "$2" != "--" ]; then
-        jobs="$2"
-        shift 2
-      else
-        jobs=4
-        shift
-      fi
-      ;;
-    -i|--install-path)
-      install_path="$2"
-      shift 2
-      ;;
-    -r|--rebuild)
-      rebuild=true
-      shift
-      ;;
-    -t|--type-build)
-      if [ -n "${2-}" ] && [ "$2" != "--" ]; then
-        BUILD_TYPE="$2"
-        shift 2
-      else
-        BUILD_TYPE="debug"
-        shift
-      fi
-      ;;
-    -c|--checks)
-      ADD_CHECKS=true
-      shift
-      ;;
-    -f|--flagsCXX)
-      if [ -n "${2-}" ] && [ "$2" != "--" ]; then
-        ADD_CXX_FLAGS="$2"
-        shift 2
-      else
-        shift
-      fi
-      ;;
-    -p|--python-wrap)
-      WITH_PYTHON=true
-      shift
-      ;;
-    -m|--matlab-wrap)
-      WITH_MATLAB=true
-      shift
-      ;;
-    -u|--unstable_build)
-      WITH_UNSTABLE=true
-      shift
-      ;;
-    -e|--exp_map_disabled)
-      WITH_EXPMAP=false
-      shift
-      ;;
-    -o|--on_manifold_preintegr)
-      USE_TANGENT_PREINTEGR=false
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      echo "Not a valid option: $1" >&2
-      exit 3
-      ;;
+    -B|--buildpath|--build_path|--build-path) buildpath="$2"; shift 2 ;;
+        --install-path) install_path="$2"; shift 2 ;;
+    -j|--jobs)          jobs="$2";     shift 2 ;;
+    -r|--rebuild-only|--rebuild) rebuild_only=true; shift ;;
+    -t|--type|--type-build) build_type="$2"; shift 2 ;;
+    -c|--checks)        run_tests=true;  shift ;;
+        --skip-tests|--no-checks) run_tests=false; shift ;;
+    -f|--flagsCXX)      CXX_FLAGS="$2"; shift 2 ;;
+    -D|--define)        cmake_defines+=( "-D$2" ); shift 2 ;;
+    -p|--python-wrap)   python_wrap=true; shift ;;
+    -m|--matlab-wrap)   matlab_wrap=true; shift ;;
+    -u|--unstable-build|--unstable_build) unstable_build=true; shift ;;
+    -e|--exp-map-disabled|--exp_map_disabled) use_expmap=false; shift ;;
+    -o|--on-manifold-preintegr|--on_manifold_preintegr) use_tangent_preintegr=false; shift ;;
+    -i|--install)       install=true;    shift ;;
+    -N|--ninja-build)   use_ninja=true;  shift ;;
+    -n|--no-optim)      no_optim=true;   shift ;;
+        --toolchain)    toolchain_file="$2"; shift 2 ;;
+        --clean)        clean_first=true; shift ;;
+    -h|--help)          usage; exit 0 ;;
+    --) shift; break ;;
+     *) die "Unknown option: $1" ;;
   esac
 done
 
-BUILD_TYPE=$(echo "${BUILD_TYPE}" | tr '[:upper:]' '[:lower:]')
-case "${BUILD_TYPE}" in
-  debug)
-    ADD_CXX_FLAGS="${ADD_CXX_FLAGS:+${ADD_CXX_FLAGS} }-Wall -Wextra"
-    ;;
-  release|relwithdebinfo|minsizerel|test)
-    ;;
-  *)
-    echo "Unsupported build type: ${BUILD_TYPE}" >&2
-    exit 4
-    ;;
+# --- normalize & validate build type ---
+bt="${build_type,,}"
+case "$bt" in
+  debug)          cmake_bt="Debug" ;;
+  release)        cmake_bt="Release" ;;
+  relwithdebinfo) cmake_bt="RelWithDebInfo" ;;
+  minsizerel)     cmake_bt="MinSizeRel" ;;
+  *) die "Invalid build type: $build_type" ;;
 esac
 
-if [ "${ADD_CHECKS}" = true ]; then
-  RUN_CHECKS=true
-fi
-case "${BUILD_TYPE}" in
-  release|relwithdebinfo|minsizerel|test)
-    RUN_CHECKS=true
-    ;;
-esac
-
-if [ "${rebuild}" = true ] && [ "${is_default_build_path}" = true ]; then
-  build_path="build_dev"
+# For common types, enforce warnings unless user already provided them
+if [[ "$bt" =~ ^(debug|relwithdebinfo|release)$ ]]; then
+  CXX_FLAGS="${CXX_FLAGS:+$CXX_FLAGS }-Wall -Wextra -Wpedantic"
 fi
 
-log_config() {
-  echo "Configured build:"
-  echo "  build_path: ${build_path}"
-  echo "  install_path: ${install_path}"
-  echo "  jobs: ${jobs}"
-  echo "  build type: ${BUILD_TYPE}"
-  echo "  enforced compile flags: ${ADD_CXX_FLAGS}"
-  echo "  run checks: ${RUN_CHECKS}"
-  echo "  python wrapper: ${WITH_PYTHON}"
-  if [ "${WITH_PYTHON}" = true ]; then
-    echo "  python executable: ${PYTHON_EXE}"
+# Enforce tests for Release
+if [[ "$cmake_bt" == "Release" ]]; then
+  run_tests=true
+fi
+
+# Validate toolchain file if provided
+if [[ -n "$toolchain_file" && ! -f "$toolchain_file" ]]; then
+  die "Toolchain file not found: $toolchain_file"
+fi
+
+# Pre-build checks
+command -v cmake >/dev/null 2>&1 || die "cmake not found"
+if [[ "$use_ninja" == true ]]; then
+  command -v ninja >/dev/null 2>&1 || die "Requested Ninja but 'ninja' not found"
+fi
+
+if [[ "$rebuild_only" == true && ! -d "$buildpath" ]]; then
+  die "No existing build directory at '$buildpath' for --rebuild-only"
+fi
+
+# Print info
+info "Buildpath          : $buildpath"
+info "Install prefix     : $install_path"
+info "Jobs               : $jobs"
+info "Build Type         : $cmake_bt"
+info "Extra CXX flags    : ${CXX_FLAGS:-<none>}"
+info "Extra CMake defines: ${cmake_defines[*]:-<none>}"
+info "Python wrapper     : $python_wrap"
+if [[ "$python_wrap" == true ]]; then
+  info "Python executable  : $python_exe"
+fi
+info "MATLAB wrapper     : $matlab_wrap"
+info "Unstable build     : $unstable_build"
+info "Use Expmap         : $use_expmap"
+info "Tangent preintegr  : $use_tangent_preintegr"
+info "Generator          : $([[ "$use_ninja" == true ]] && echo Ninja || echo 'Unix Makefiles')"
+info "Toolchain file     : ${toolchain_file:-<none>}"
+info "Run tests          : $run_tests"
+info "Install after build: $install"
+
+sleep 0.2
+
+# --- Configure ---
+if [[ "$rebuild_only" == false ]]; then
+  if [[ "$clean_first" == true && -d "$buildpath" ]]; then
+    info "Removing existing build dir '$buildpath'"
+    rm -rf -- "$buildpath"
   fi
-  echo "  MATLAB wrapper: ${WITH_MATLAB}"
-  echo "  unstable modules: ${WITH_UNSTABLE}"
-  echo "  use Expmap: ${WITH_EXPMAP}"
-  echo "  tangent preintegration: ${USE_TANGENT_PREINTEGR}"
-}
 
-configure_cmake() {
-  local -a cmake_args=(
+  cmake_args=(
     -S .
-    -B "${build_path}"
-    -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
-    -DGTSAM_BUILD_UNSTABLE="${WITH_UNSTABLE}"
-    -DGTSAM_BUILD_PYTHON="${WITH_PYTHON}"
-    -DGTSAM_INSTALL_MATLAB_TOOLBOX="${WITH_MATLAB}"
+    -B "$buildpath"
+    "-DCMAKE_BUILD_TYPE=$cmake_bt"
+    "-DCMAKE_CXX_FLAGS=$CXX_FLAGS"
+    "-DCMAKE_C_FLAGS=$CXX_FLAGS"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    "-DGTSAM_BUILD_UNSTABLE=$(bool_to_cmake "$unstable_build")"
+    "-DGTSAM_BUILD_PYTHON=$(bool_to_cmake "$python_wrap")"
+    "-DGTSAM_INSTALL_MATLAB_TOOLBOX=$(bool_to_cmake "$matlab_wrap")"
     -DGTSAM_WITH_TBB=ON
     -DGTSAM_WITH_EIGEN_MKL=OFF
-    -DGTSAM_UNSTABLE_BUILD_PYTHON="${WITH_PYTHON}"
-    -DCMAKE_CXX_FLAGS="${ADD_CXX_FLAGS}"
-    -DCMAKE_C_FLAGS="${ADD_CXX_FLAGS}"
-    -DGTSAM_TANGENT_PREINTEGRATION="${USE_TANGENT_PREINTEGR}"
-    -DGTSAM_POSE3_EXPMAP="${WITH_EXPMAP}"
-    -DGTSAM_ROT3_EXPMAP="${WITH_EXPMAP}"
-    -DCMAKE_INSTALL_PREFIX="${install_path}"
+    "-DGTSAM_UNSTABLE_BUILD_PYTHON=$(bool_to_cmake "$python_wrap")"
+    "-DGTSAM_TANGENT_PREINTEGRATION=$(bool_to_cmake "$use_tangent_preintegr")"
+    "-DGTSAM_POSE3_EXPMAP=$(bool_to_cmake "$use_expmap")"
+    "-DGTSAM_ROT3_EXPMAP=$(bool_to_cmake "$use_expmap")"
+    "-DCMAKE_INSTALL_PREFIX=$install_path"
   )
+  [[ "$use_ninja"  == true ]] && cmake_args+=( -G Ninja )
+  [[ "$no_optim"   == true ]] && cmake_args+=( -DNO_OPTIMIZATION=ON )
+  [[ -n "$toolchain_file" ]] && cmake_args+=( "-DCMAKE_TOOLCHAIN_FILE=$toolchain_file" )
+  [[ ${#cmake_defines[@]} -gt 0 ]] && cmake_args+=( "${cmake_defines[@]}" )
 
-  if [ "${WITH_PYTHON}" = true ]; then
-    cmake_args+=("-DPYTHON_EXECUTABLE=${PYTHON_EXE}")
-    if [ ! -x "${PYTHON_EXE}" ]; then
-      echo "Warning: PYTHON_EXE does not point to an executable: ${PYTHON_EXE}" >&2
+  if [[ "$python_wrap" == true ]]; then
+    cmake_args+=( "-DPYTHON_EXECUTABLE=$python_exe" )
+    if [[ ! -x "$python_exe" ]]; then
+      echo "Warning: PYTHON_EXE does not point to an executable: $python_exe" >&2
     fi
   fi
 
+  info "Configuring with CMake...\n"
   cmake "${cmake_args[@]}"
-}
-
-build_targets() {
-  local target="${1:-all}"
-  cmake --build "${build_path}" --target "${target}" --parallel "${jobs}"
-}
-
-run_checks_if_requested() {
-  if [ "${RUN_CHECKS}" = true ]; then
-    build_targets check
-  fi
-}
-
-install_if_applicable() {
-  if [ "${BUILD_TYPE}" != "debug" ]; then
-    build_targets install
-  fi
-}
-
-log_config
-
-if [ "${rebuild}" = true ]; then
-  if [ ! -d "${build_path}" ]; then
-    echo "ERROR: No existing build directory at ${build_path}. Exiting..." >&2
-    exit 1
-  fi
-  configure_cmake
-  build_targets
-  run_checks_if_requested
-  install_if_applicable
-else
-  sudo apt update
-  sudo apt install -y gcc-11 g++-11 libeigen3-dev
-
-  if [ -d "${build_path}" ]; then
-    rm -rf -- "${build_path}"
-  fi
-
-  configure_cmake
-  build_targets
-  run_checks_if_requested
-  install_if_applicable
+elif [[ -n "$toolchain_file" ]]; then
+  info "Toolchain file provided, but --rebuild-only skips configure."
 fi
+
+# --- Build ---
+info "\nBuilding..."
+cmake --build "$buildpath" --parallel "$jobs"
+
+# --- Test ---
+if [[ "$run_tests" == true || "$install" == true ]]; then
+  info "\nRunning tests..."
+  ctest --test-dir "$buildpath" --output-on-failure -j "$jobs"
+fi
+
+# --- Install ---
+if [[ "$install" == true ]]; then
+  info "Installing..."
+  cmake --build "$buildpath" --parallel "$jobs" --target install
+fi
+
+info "Done."
