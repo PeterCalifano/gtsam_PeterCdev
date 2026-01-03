@@ -11,7 +11,6 @@
 
 #include <gtsam/inference/ClusterTree.h>
 #include <gtsam/inference/BayesTree.h>
-#include <gtsam/inference/Ordering.h>
 #include <gtsam/base/timing.h>
 #include <gtsam/base/treeTraversal-inst.h>
 
@@ -39,6 +38,34 @@ std::vector<size_t> ClusterTree<GRAPH>::Cluster::nrFrontalsOfChildren() const {
   for (const sharedNode& child : children)
     nrFrontals.push_back(child->nrFrontals());
   return nrFrontals;
+}
+
+/* ************************************************************************* */
+template <class GRAPH>
+KeySet ClusterTree<GRAPH>::Cluster::separatorKeys(KeySetMap* cache) const {
+  if (cache) {
+    auto it = cache->find(this);
+    if (it != cache->end()) return it->second;
+  }
+
+  KeySet keys;
+  for (const auto& factor : factors) {
+    if (!factor) continue;
+    keys.insert(factor->begin(), factor->end());
+  }
+  for (const auto& child : children) {
+    KeySet childSeparators = child->separatorKeys(cache);
+    keys.insert(childSeparators.begin(), childSeparators.end());
+  }
+  for (Key key : orderedFrontalKeys) {
+    keys.erase(key);
+  }
+
+  if (cache) {
+    auto result = cache->emplace(this, std::move(keys));
+    return result.first->second;
+  }
+  return keys;
 }
 
 /* ************************************************************************* */

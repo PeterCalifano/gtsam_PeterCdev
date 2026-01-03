@@ -27,6 +27,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <array>
+#include <vector>
 
 namespace boost {
 namespace serialization {
@@ -133,6 +134,15 @@ namespace gtsam {
     /// This method makes a copy - use the methods below if performance is critical.
     Matrix block(DenseIndex I, DenseIndex J) const;
 
+    /// Get a block view (anywhere in the matrix) without allocating a copy.
+    /// This method returns a const reference to the block for efficient read access.
+    /// @param I The row block index.
+    /// @param J The column block index.
+    /// @return A const block view into the matrix.
+    constBlock blockView(DenseIndex I, DenseIndex J) const {
+      return block_(I, J);
+    }
+
     /// Return the J'th diagonal block as a self adjoint view.
     Eigen::SelfAdjointView<Block, Eigen::Upper> diagonalBlock(DenseIndex J) {
       return block_(J, J).selfadjointView<Eigen::Upper>();
@@ -235,6 +245,11 @@ namespace gtsam {
         block_(J, I).noalias() += xpr.transpose();
       }
     }
+
+    /// Update this matrix with blocks from another block matrix using a mapping.
+    /// Entries with index -1 are skipped.
+    void updateFromMappedBlocks(const SymmetricBlockMatrix& other,
+                                const std::vector<DenseIndex>& blockIndices);
 
     /// @}
     /// @name Accessing the full matrix.

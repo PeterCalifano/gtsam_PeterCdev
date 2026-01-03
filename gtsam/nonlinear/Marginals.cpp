@@ -79,6 +79,18 @@ Marginals::Marginals(const GaussianFactorGraph& graph, const VectorValues& solut
 }
 
 /* ************************************************************************* */
+Marginals::Marginals(GaussianBayesTree&& bayesTree,
+                     const VectorValues& solution,
+                     Factorization factorization)
+    : factorization_(factorization), bayesTree_(std::move(bayesTree)) {
+  gttic(MarginalsConstructor);
+  for (const auto& keyValue: solution) {
+    values_.insert(keyValue.first, keyValue.second);
+  }
+  bayesTree_.addFactorsToGraph(&graph_);
+}
+
+/* ************************************************************************* */
 void Marginals::computeBayesTree() {
   // The default ordering to use.
   const Ordering::OrderingType defaultOrderingType = Ordering::COLAMD;
@@ -131,7 +143,15 @@ Matrix Marginals::marginalInformation(Key variable) const {
 
 /* ************************************************************************* */
 Matrix Marginals::marginalCovariance(Key variable) const {
-  return marginalInformation(variable).inverse();
+  Matrix info = marginalInformation(variable);
+
+  // Deterministic constraints (e.g., NonlinearEquality) produce infinite
+  // information for the constrained variable. Treat those as zero covariance
+  // rather than attempting to invert an infinite matrix.
+  if (!info.allFinite())
+    return Matrix::Zero(info.rows(), info.cols());
+
+  return info.inverse();
 }
 
 /* ************************************************************************* */
@@ -191,6 +211,11 @@ JointMarginal Marginals::jointMarginalInformation(const KeyVector& variables) co
 /* ************************************************************************* */
 VectorValues Marginals::optimize() const {
   return bayesTree_.optimize();
+}
+
+/* ************************************************************************* */
+void Marginals::deleteCachedShortcuts() {
+  bayesTree_.deleteCachedShortcuts();
 }
 
 /* ************************************************************************* */
