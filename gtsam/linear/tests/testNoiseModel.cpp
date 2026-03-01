@@ -19,7 +19,9 @@
 
 
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/base/Matrix.h>
 #include <gtsam/base/TestableAssertions.h>
+#include <gtsam/geometry/Point2.h>
 
 #include <CppUnitLite/TestHarness.h>
 
@@ -104,6 +106,37 @@ TEST(NoiseModel, Unit)
   Vector v = Vector3(5.0,10.0,15.0);
   Gaussian::shared_ptr u(Unit::Create(3));
   EXPECT(assert_equal(v,u->whiten(v)));
+}
+
+/* ************************************************************************* */
+TEST(NoiseModel, UnitCreateMeasured)
+{
+  Matrix22 fixed = Matrix22::Identity();
+  auto fixedModel = Unit::Create(fixed);
+  EXPECT_LONGS_EQUAL(4, fixedModel->dim());
+  EXPECT(fixedModel == Unit::Create(fixed));
+
+  Matrix dynamic(2, 3);
+  dynamic.setZero();
+  EXPECT_LONGS_EQUAL(6, Unit::Create(dynamic)->dim());
+
+  EXPECT_LONGS_EQUAL(2, Unit::Create(Point2(1.0, 2.0))->dim());
+  EXPECT_LONGS_EQUAL(1, Unit::Create(1.0)->dim());
+}
+
+/* ************************************************************************* */
+TEST(NoiseModel, MatchesDimension)
+{
+  Matrix22 fixed = Matrix22::Identity();
+  EXPECT(matchesDimension(*Unit::Create(4), fixed));
+  EXPECT(!matchesDimension(*Unit::Create(3), fixed));
+
+  Matrix dynamic(2, 3);
+  dynamic.setZero();
+  EXPECT(matchesDimension(*Unit::Create(6), dynamic));
+
+  EXPECT(matchesDimension(*Unit::Create(2), Point2(1.0, 2.0)));
+  EXPECT(matchesDimension(*Unit::Create(1), 1.0));
 }
 
 /* ************************************************************************* */
@@ -478,6 +511,94 @@ TEST(NoiseModel, WhitenInPlace)
 }
 
 /* ************************************************************************* */
+TEST(NoiseModel, InPlaceVectorOperations)
+{
+  SharedGaussian gaussian = Gaussian::SqrtInformation(R, false);
+  Vector v = Vector3(5.0, 10.0, 15.0);
+  Vector expected = gaussian->unwhiten(v);
+  Vector actual = v;
+  gaussian->unwhitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+
+  SharedDiagonal diagonal = Diagonal::Sigmas(kSigmas, false);
+  v = Vector3(10.0, 20.0, 30.0);
+  expected = diagonal->whiten(v);
+  actual = v;
+  diagonal->whitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+
+  v = Vector3(1.0, 2.0, 3.0);
+  expected = diagonal->unwhiten(v);
+  actual = v;
+  diagonal->unwhitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+
+  SharedIsotropic isotropic = Isotropic::Sigma(3, kSigma, false);
+  v = Vector3(1.0, 2.0, 3.0);
+  expected = isotropic->unwhiten(v);
+  actual = v;
+  isotropic->unwhitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+
+  SharedConstrained constrained =
+      Constrained::MixedSigmas(Vector3(kSigma, 0.0, kSigma));
+  v = Vector3(2.0, 3.0, 4.0);
+  expected = constrained->whiten(v);
+  actual = v;
+  constrained->whitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+  EXPECT_DOUBLES_EQUAL(v(1), actual(1), 1e-12);
+
+  SharedNoiseModel robust = Robust::Create(mEstimator::Huber::Create(1.345),
+                                           diagonal);
+  v = Vector3(1.0, 2.0, 3.0);
+  expected = robust->whiten(v);
+  actual = v;
+  robust->whitenInPlace(actual);
+  EXPECT(assert_equal(expected, actual));
+}
+
+/* ************************************************************************* */
+TEST(NoiseModel, InPlaceVectorBlockOperations)
+{
+  SharedGaussian gaussian = Gaussian::SqrtInformation(R, false);
+  SharedDiagonal diagonal = Diagonal::Sigmas(kSigmas, false);
+  SharedIsotropic isotropic = Isotropic::Sigma(3, kSigma, false);
+  SharedConstrained constrained =
+      Constrained::MixedSigmas(Vector3(kSigma, 0.0, kSigma));
+
+  Vector v = Vector::LinSpaced(5, 1.0, 5.0);
+  Eigen::Block<Vector> block(v, 1, 0, 3, 1);
+  Vector expected = diagonal->whiten(Vector(block));
+  diagonal->whitenInPlace(block);
+  EXPECT(assert_equal(expected, Vector(block)));
+
+  v = Vector::LinSpaced(5, 1.0, 5.0);
+  Eigen::Block<Vector> block_unwhiten(v, 1, 0, 3, 1);
+  expected = diagonal->unwhiten(Vector(block_unwhiten));
+  diagonal->unwhitenInPlace(block_unwhiten);
+  EXPECT(assert_equal(expected, Vector(block_unwhiten)));
+
+  v = Vector::LinSpaced(5, 1.0, 5.0);
+  Eigen::Block<Vector> block_constrained(v, 1, 0, 3, 1);
+  expected = constrained->whiten(Vector(block_constrained));
+  constrained->whitenInPlace(block_constrained);
+  EXPECT(assert_equal(expected, Vector(block_constrained)));
+
+  v = Vector::LinSpaced(5, 1.0, 5.0);
+  Eigen::Block<Vector> block_iso(v, 1, 0, 3, 1);
+  expected = isotropic->unwhiten(Vector(block_iso));
+  isotropic->unwhitenInPlace(block_iso);
+  EXPECT(assert_equal(expected, Vector(block_iso)));
+
+  v = Vector::LinSpaced(5, 1.0, 5.0);
+  Eigen::Block<Vector> block_gauss(v, 1, 0, 3, 1);
+  expected = gaussian->unwhiten(Vector(block_gauss));
+  gaussian->unwhitenInPlace(block_gauss);
+  EXPECT(assert_equal(expected, Vector(block_gauss)));
+}
+
+/* ************************************************************************* */
 
 /*
  * These tests are responsible for testing the weight functions for the m-estimators in GTSAM.
@@ -564,6 +685,21 @@ TEST(NoiseModel, robustFunctionGemanMcClure)
   DOUBLES_EQUAL(0.495049504950495, gmc->loss(error2), 1e-8);
   DOUBLES_EQUAL(0.495049504950495, gmc->loss(error3), 1e-8);
   DOUBLES_EQUAL(0.2500, gmc->loss(error4), 1e-8);
+}
+
+TEST(NoiseModel, robustFunctionTLS)
+{
+  const double k = 4.0, error1 = 0.5, error2 = 10.0, error3 = -10.0, error4 = -0.5;
+  const mEstimator::TruncatedLeastSquares::shared_ptr tls = mEstimator::TruncatedLeastSquares::Create(k);
+  DOUBLES_EQUAL(1.0, tls->weight(error1), 1e-8);
+  DOUBLES_EQUAL(0.0, tls->weight(error2), 1e-8);
+  DOUBLES_EQUAL(0.0, tls->weight(error3), 1e-8);
+  DOUBLES_EQUAL(1.0, tls->weight(error4), 1e-8);
+
+  DOUBLES_EQUAL(0.1250, tls->loss(error1), 1e-8);
+  DOUBLES_EQUAL(8.0, tls->loss(error2), 1e-8);
+  DOUBLES_EQUAL(8.0, tls->loss(error3), 1e-8);
+  DOUBLES_EQUAL(0.1250, tls->loss(error4), 1e-8);
 }
 
 TEST(NoiseModel, robustFunctionWelsch)
@@ -685,6 +821,30 @@ TEST(NoiseModel, robustNoiseGemanMcClure)
 
   const double sqrt_weight_error1 = sqrt(0.25);
   const double sqrt_weight_error2 = sqrt(k4/(k2error*k2error));
+
+  DOUBLES_EQUAL(sqrt_weight_error1*error1, b(0), 1e-8);
+  DOUBLES_EQUAL(sqrt_weight_error2*error2, b(1), 1e-8);
+
+  DOUBLES_EQUAL(sqrt_weight_error1*a00, A(0,0), 1e-8);
+  DOUBLES_EQUAL(sqrt_weight_error1*a01, A(0,1), 1e-8);
+  DOUBLES_EQUAL(sqrt_weight_error2*a10, A(1,0), 1e-8);
+  DOUBLES_EQUAL(sqrt_weight_error2*a11, A(1,1), 1e-8);
+}
+
+TEST(NoiseModel, robustNoiseTLS)
+{
+  const double k = 1.0, error1 = 1.0, error2 = 100.0;
+  const double a00 = 1.0, a01 = 10.0, a10 = 100.0, a11 = 1000.0;
+  Matrix A = (Matrix(2, 2) << a00, a01, a10, a11).finished();
+  Vector b = Vector2(error1, error2);
+  const Robust::shared_ptr robust = Robust::Create(
+    mEstimator::TruncatedLeastSquares::Create(k, mEstimator::TruncatedLeastSquares::Scalar),
+    Unit::Create(2));
+
+  robust->WhitenSystem(A, b);
+
+  const double sqrt_weight_error1 = 1.0;
+  const double sqrt_weight_error2 = 0.0;
 
   DOUBLES_EQUAL(sqrt_weight_error1*error1, b(0), 1e-8);
   DOUBLES_EQUAL(sqrt_weight_error2*error2, b(1), 1e-8);

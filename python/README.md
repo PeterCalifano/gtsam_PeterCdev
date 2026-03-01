@@ -77,3 +77,15 @@ See the tests for examples.
 ## Wrapping Custom GTSAM-based Project
 
 Please refer to the template project and the corresponding tutorial available [here](https://github.com/borglab/GTSAM-project-python).
+
+## Wheels
+
+GTSAM Python wheels are built in CI through two cibuildwheel workflows that share the same matrix of Python 3.10--3.13 targets on Linux x86_64, Linux aarch64, macOS x86_64, and macOS arm64. Both scripts first configure the wrapper with `cmake -DGTSAM_BUILD_PYTHON=1` so that `setup.py` exists for cibuildwheel, invoke `.github/scripts/python_wheels/cibw_before_all.sh`, then run `.github/scripts/python_wheels/build_wheels.sh` before storing the artifacts and publishing them with `pypa/gh-action-pypi-publish`.
+
+1. **Develop wheels** (`.github/workflows/build-cibw.yml`) run on every push to `develop` (and by manual dispatch). The workflow injects `DEVELOP=1` and a timestamp so the generated version string becomes a `gtsam-develop` build, and it continues to publish the built wheels via the publish action at the end of the job. Use this workflow as a staging pipeline for the most recent development snapshots.
+
+2. **Release wheels** (`.github/workflows/prod-cibw.yml`) trigger when a GitHub release is published (and can also be run manually). The job is otherwise identical but omits the `DEVELOP` flag and publishes the wheels to `https://test.pypi.org/legacy/`, making it the production-quality artifact build tied to a release tag.
+
+### Cleaning develop wheels
+
+If the `gtsam-develop` project on PyPI grows too large (PyPI enforces a 10 GB quota for each package), run `.github/scripts/python_wheels/cleanup_gtsam_develop.sh` to drop every release except the most recent one. You can pass your PyPI username (`bash .github/scripts/python_wheels/cleanup_gtsam_develop.sh <username>`) or let the script prompt for it, but the account must be an owner or maintainer of `gtsam-develop`. The script always confirms before deleting, then calls `python3 -m pypi_cleanup` with `--leave-most-recent-only --do-it`, so treat this as a permanent cleanup that should only be used when you are about to exceed PyPI's size limit.

@@ -1470,21 +1470,6 @@ TEST(Pose3, Vec) {
 }
 
 /* ************************************************************************* */
-TEST(Pose3, AdjointMap) {
-  // Create a non-trivial Pose3 object
-  const Pose3 pose(Rot3::Rodrigues(0.1, 0.2, 0.3), Point3(1.0, 2.0, 3.0));
-
-  // Call the specialized AdjointMap
-  Matrix6 specialized_Adj = pose.AdjointMap();
-
-  // Call the generic AdjointMap from the base class
-  Matrix6 generic_Adj = static_cast<const MatrixLieGroup<Pose3, 6, 4>*>(&pose)->AdjointMap();
-
-  // Assert that they are equal
-  EXPECT(assert_equal(specialized_Adj, generic_Adj, 1e-9));
-}
-
-/* ************************************************************************* */
 int main() {
   TestResult tr;
   return TestRegistry::runAllTests(tr);

@@ -20,11 +20,11 @@
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/symbolic/SymbolicBayesNet.h>
 #include <gtsam/symbolic/SymbolicBayesTree.h>
+#include <gtsam/symbolic/IndexedJunctionTree.h>
 #include <gtsam/symbolic/tests/symbolicExampleGraphs.h>
 
 #include <CppUnitLite/TestHarness.h>
 #include <gtsam/base/TestableAssertions.h>
-#include <iterator>
 #include <type_traits>
 
 using namespace std;
@@ -96,6 +96,17 @@ TEST(SymbolicBayesTree, clique_structure) {
   SymbolicBayesTree actual = *graph.eliminateMultifrontal(order);
 
   EXPECT(assert_equal(expected, actual));
+
+  // Reuse an indexed junction tree built from the same graph and ordering.
+  IndexedJunctionTree indexedJunctionTree = graph.buildIndexedJunctionTree(order);
+
+  SymbolicBayesTree actualReuse1 =
+      *graph.eliminateMultifrontal(indexedJunctionTree);
+  SymbolicBayesTree actualReuse2 =
+      *graph.eliminateMultifrontal(indexedJunctionTree);
+
+  EXPECT(assert_equal(expected, actualReuse1));
+  EXPECT(assert_equal(expected, actualReuse2));
 }
 
 /* ************************************************************************* *

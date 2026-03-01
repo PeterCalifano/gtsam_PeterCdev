@@ -29,7 +29,7 @@ template<class FactorGraphType>
 void MetisIndex::augment(const FactorGraphType& factors) {
   std::map<int32_t, std::set<int32_t> > iAdjMap; // Stores a set of keys that are adjacent to key x, with  adjMap.first
   std::map<int32_t, std::set<int32_t> >::iterator iAdjMapIt;
-  std::set<Key> keySet;
+  KeySet keySet;
 
   /* ********** Convert to CSR format ********** */
   // Assuming that vertex numbering starts from 0 (C style),

@@ -219,7 +219,8 @@ TEST(TestLinearContainerFactor, hessian_factor_withlinpoints) {
   // Check linearization with corrections for updated linearization point
   Vector g1_prime = g_prime.head(3);
   Vector g2_prime = g_prime.tail(2);
-  double f_prime = f + dv.transpose() * G.selfadjointView<Eigen::Upper>() * dv - 2.0 * dv.transpose() * g;
+  const auto Gsym = G.selfadjointView<Eigen::Upper>();
+  double f_prime = f + dv.dot(Gsym * dv) - 2.0 * dv.dot(g);
   HessianFactor expNewFactor(x1, l1, G11, G12, g1_prime, G22, g2_prime, f_prime);
   EXPECT(assert_equal(*expNewFactor.clone(), *actFactor.linearize(noisyValues), tol));
 }

@@ -177,6 +177,12 @@ class Rot2 {
   gtsam::Vector logmap(const gtsam::Rot2& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -293,6 +299,12 @@ class SO3 {
   gtsam::Vector3 logmap(const gtsam::SO3& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -332,6 +344,12 @@ class SO4 {
   gtsam::Vector logmap(const gtsam::SO4& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -373,6 +391,12 @@ class SOn {
   gtsam::Vector logmap(const gtsam::SOn& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -450,6 +474,12 @@ class Rot3 {
   gtsam::Vector logmap(const gtsam::Rot3& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -530,13 +560,16 @@ class Pose2 {
   gtsam::Vector logmap(const gtsam::Pose2& g, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
   static gtsam::Matrix ExpmapDerivative(gtsam::Vector v);
   static gtsam::Matrix LogmapDerivative(const gtsam::Pose2& v);
-  gtsam::Matrix AdjointMap() const;
-  gtsam::Vector Adjoint(gtsam::Vector xi) const;
-  static gtsam::Matrix adjointMap_(gtsam::Vector xi);
-  static gtsam::Vector adjoint_(gtsam::Vector xi, gtsam::Vector y);
-  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Matrix adjointMap_(gtsam::Vector xi);
+  static gtsam::Vector adjoint_(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -624,6 +657,7 @@ class Pose3 {
   gtsam::Vector logmap(const gtsam::Pose3& g);
   gtsam::Vector logmap(const gtsam::Pose3& g, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
 
+  // Matrix Lie Group
   gtsam::Matrix AdjointMap() const;
   gtsam::Vector Adjoint(gtsam::Vector xi_b) const;
   gtsam::Vector Adjoint(gtsam::Vector xi_b, Eigen::Ref<Eigen::MatrixXd> H_this,
@@ -633,11 +667,9 @@ class Pose3 {
                           Eigen::Ref<Eigen::MatrixXd> H_x) const;
   static gtsam::Matrix adjointMap(gtsam::Vector xi);
   static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   static gtsam::Matrix adjointMap_(gtsam::Vector xi);
   static gtsam::Vector adjoint_(gtsam::Vector xi, gtsam::Vector y);
-  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
-
-  // Matrix Lie Group
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -675,6 +707,69 @@ class Pose3 {
   double range(const gtsam::Pose3& pose);
   double range(const gtsam::Pose3& pose, Eigen::Ref<Eigen::MatrixXd> Hself,
                Eigen::Ref<Eigen::MatrixXd> Hpose);
+  gtsam::Unit3 bearing(const gtsam::Point3& point);
+  gtsam::Unit3 bearing(const gtsam::Point3& point, Eigen::Ref<Eigen::MatrixXd> Hself,
+                       Eigen::Ref<Eigen::MatrixXd> Hpoint);
+  gtsam::Unit3 bearing(const gtsam::Pose3& pose);
+  gtsam::Unit3 bearing(const gtsam::Pose3& pose, Eigen::Ref<Eigen::MatrixXd> Hself,
+                       Eigen::Ref<Eigen::MatrixXd> Hpose);
+
+  // enabling serialization functionality
+  void serialize() const;
+};
+
+#include <gtsam/geometry/ExtendedPose3.h>
+template <K = {2, 3, 4, 6}>
+class ExtendedPose3 {
+  // Standard Constructors
+  ExtendedPose3();
+  ExtendedPose3(const This& other);
+  ExtendedPose3(const gtsam::Rot3& R, const gtsam::Matrix& x);
+  ExtendedPose3(const gtsam::Matrix& T);
+
+  // Testable
+  void print(string s = "") const;
+  bool equals(const This& other, double tol = 1e-9) const;
+
+  // Access
+  size_t k() const;
+  gtsam::Rot3 rotation() const;
+  gtsam::Point3 x(size_t i) const;
+  gtsam::Matrix xMatrix() const;
+
+  // Group
+  static This Identity();
+  This inverse() const;
+  This compose(const This& g) const;
+  This between(const This& g) const;
+
+  // Operator Overloads
+  This operator*(const This& other) const;
+
+  // Manifold
+  static size_t Dim();
+  size_t dim() const;
+  This retract(gtsam::Vector v) const;
+  gtsam::Vector localCoordinates(const This& g) const;
+
+  // Lie Group
+  static This Expmap(gtsam::Vector xi);
+  static gtsam::Vector Logmap(const This& pose);
+  static gtsam::Matrix ExpmapDerivative(gtsam::Vector xi);
+  static gtsam::Matrix LogmapDerivative(gtsam::Vector xi);
+  static gtsam::Matrix LogmapDerivative(const This& pose);
+
+  // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi_b) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
+  gtsam::Vector vec() const;
+  gtsam::Matrix matrix() const;
+  static gtsam::Matrix Hat(const gtsam::Vector& xi);
+  static gtsam::Vector Vee(const gtsam::Matrix& X);
 
   // enabling serialization functionality
   void serialize() const;
@@ -721,6 +816,12 @@ class SL4 {
   gtsam::Vector logmap(const gtsam::SL4& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
@@ -1406,13 +1507,22 @@ class Similarity2 {
   static gtsam::Vector Logmap(const gtsam::Similarity2& S);
   gtsam::Similarity2 expmap(const gtsam::Vector& v);
   gtsam::Vector logmap(const gtsam::Similarity2& g);
+
+  // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
+  gtsam::Vector vec() const;
+  gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
   // Standard Interface
   bool equals(const gtsam::Similarity2& sim, double tol) const;
   void print(string s = "") const;
-  gtsam::Matrix matrix() const;
   gtsam::Rot2& rotation();
   gtsam::Point2& translation();
   double scale() const;
@@ -1453,13 +1563,22 @@ class Similarity3 {
   static gtsam::Vector Logmap(const gtsam::Similarity3& s);
   gtsam::Similarity3 expmap(const gtsam::Vector& v);
   gtsam::Vector logmap(const gtsam::Similarity3& g);
+
+  // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
+  gtsam::Vector vec() const;
+  gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
   // Standard Interface
   bool equals(const gtsam::Similarity3& sim, double tol) const;
   void print(string s = "") const;
-  gtsam::Matrix matrix() const;
   gtsam::Rot3& rotation();
   gtsam::Point3& translation();
   double scale() const;
@@ -1506,6 +1625,12 @@ class Gal3 {
   gtsam::Gal3 compose(const gtsam::Gal3& other) const;
   gtsam::Gal3 between(const gtsam::Gal3& other) const;
   gtsam::Event act(const gtsam::Event& e) const;
+  double range(const gtsam::Point3& point) const;
+  double range(const gtsam::Point3& point, Eigen::Ref<Eigen::MatrixXd> Hself,
+               Eigen::Ref<Eigen::MatrixXd> Hpoint) const;
+  gtsam::Unit3 bearing(const gtsam::Point3& point) const;
+  gtsam::Unit3 bearing(const gtsam::Point3& point, Eigen::Ref<Eigen::MatrixXd> Hself,
+                       Eigen::Ref<Eigen::MatrixXd> Hpoint) const;
 
   // Operator Overloads
   gtsam::Gal3 operator*(const gtsam::Gal3& other) const;
@@ -1517,6 +1642,12 @@ class Gal3 {
   gtsam::Vector10 logmap(const gtsam::Gal3& g);
 
   // Matrix Lie Group
+  gtsam::Matrix AdjointMap() const;
+  gtsam::Vector Adjoint(gtsam::Vector xi) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
   gtsam::Vector vec() const;
   gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);

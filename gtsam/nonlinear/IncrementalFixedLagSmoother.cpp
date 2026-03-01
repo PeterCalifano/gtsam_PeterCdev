@@ -165,7 +165,7 @@ void IncrementalFixedLagSmoother::createOrderingConstraints(
 }
 
 /* ************************************************************************* */
-void IncrementalFixedLagSmoother::PrintKeySet(const std::set<Key>& keys,
+void IncrementalFixedLagSmoother::PrintKeySet(const KeySet& keys,
     const std::string& label) {
   std::cout << label;
   for(Key key: keys) {

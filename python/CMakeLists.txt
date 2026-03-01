@@ -149,6 +149,15 @@ if(WIN32)
         COMMAND_EXPAND_LISTS
         VERBATIM
     )
+    if(GTSAM_USE_EIGEN_MKL AND DEFINED VCPKG_INSTALLED_DIR)
+        ADD_CUSTOM_COMMAND(TARGET ${GTSAM_PYTHON_TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MKL_DLLS}"
+            "${GTSAM_PYTHON_BUILD_DIRECTORY}/gtsam/"
+            COMMAND_EXPAND_LISTS
+            VERBATIM
+        )
+    endif()
 endif()
 
 # Set the path for the GTSAM python module
@@ -263,6 +272,15 @@ if(GTSAM_UNSTABLE_BUILD_PYTHON)
             COMMAND_EXPAND_LISTS
             VERBATIM
         )
+        if(GTSAM_USE_EIGEN_MKL AND DEFINED VCPKG_INSTALLED_DIR)
+            ADD_CUSTOM_COMMAND(TARGET ${GTSAM_PYTHON_UNSTABLE_TARGET} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MKL_DLLS}"
+                "${GTSAM_PYTHON_BUILD_DIRECTORY}/gtsam_unstable/"
+                COMMAND_EXPAND_LISTS
+                VERBATIM
+            )
+        endif()
     endif()
 
     add_custom_target(

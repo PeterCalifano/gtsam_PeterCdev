@@ -17,6 +17,9 @@ project:
       - file: ./gtsam/geometry/geometry.md
         children:
         - pattern: ./gtsam/geometry/doc/*
+      - file: ./gtsam/basis/basis.md
+        children:
+        - pattern: ./gtsam/basis/doc/*
       - file: ./gtsam/inference/inference.md
         children:
         - pattern: ./gtsam/inference/doc/*
@@ -26,6 +29,9 @@ project:
       - file: ./gtsam/nonlinear/nonlinear.md
         children:
         - pattern: ./gtsam/nonlinear/doc/*
+      - file: ./gtsam/constrained/constrained.md
+        children:
+        - pattern: ./gtsam/constrained/doc/*
       - file: ./gtsam/symbolic/symbolic.md
         children:
         - pattern: ./gtsam/symbolic/doc/*

@@ -176,6 +176,21 @@ virtual class GemanMcClure: gtsam::noiseModel::mEstimator::Base {
   double loss(double error) const;
 };
 
+virtual class TruncatedLeastSquares: gtsam::noiseModel::mEstimator::Base {
+  TruncatedLeastSquares(double c);
+  TruncatedLeastSquares(double c, gtsam::noiseModel::mEstimator::Base::ReweightScheme reweight);
+  static gtsam::noiseModel::mEstimator::TruncatedLeastSquares* Create(double c);
+  static gtsam::noiseModel::mEstimator::TruncatedLeastSquares* Create(
+      double c, gtsam::noiseModel::mEstimator::Base::ReweightScheme reweight);
+
+  // enabling serialization functionality
+  void serializable() const;
+
+  double weight(double error) const;
+  double loss(double error) const;
+};
+
+
 virtual class DCS: gtsam::noiseModel::mEstimator::Base {
   DCS(double c);
   DCS(double c, gtsam::noiseModel::mEstimator::Base::ReweightScheme reweight);
