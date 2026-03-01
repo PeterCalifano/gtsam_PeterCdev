@@ -1,11 +1,15 @@
 /**
  * @file AbcEquivariantFilterExample.cpp
- * @brief Demonstration of the full Attitude-Bias-Calibration Equivariant Filter
+ * @brief Demonstration of the Attitude-Bias-Calibration Equivariant Filter
  *
  * This demo shows the Equivariant Filter (EqF) for attitude estimation
  * with both gyroscope bias and sensor extrinsic calibration, based on the
  * paper: "Overcoming Bias: Equivariant Filter Design for Biased Attitude
  * Estimation with Online Calibration" by Fornasier et al.
+ *
+ * This example uses the simplified AbcEquivariantFilter class which
+ * provides a clean interface for predict/update operations without requiring
+ * manual computation of Jacobian matrices and innovation functions.
  *
  * @author Darshan Rajasekaran
  * @author Jennifer Oum
@@ -13,20 +17,29 @@
  * @author Frank Dellaert
  * @date 2025
  */
-#include <gtsam/navigation/EquivariantFilter.h>
+
 #include <gtsam/slam/dataset.h>
 #include <gtsam_unstable/geometry/ABC.h>
+#include <gtsam_unstable/geometry/ABCEquivariantFilter.h>
+
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <exception>
+#include <fstream>
+#include <iostream>
+#include <numeric>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 // Use namespace for convenience
 using namespace gtsam;
 constexpr size_t n = 1;  // Number of calibration states
 using M = abc::State<n>;
-using G = abc::Group<n>;
-using Symmetry = abc::Symmetry<n>;
-using EqFilter = gtsam::EquivariantFilter<M, Symmetry>;
-using Lift = abc::Lift<n>;
-using InputOrbit = typename abc::InputAction<n>::Orbit;
-using Innovation = abc::Innovation<n>;
+using AbcFilter = abc::AbcEquivariantFilter<n>;
 
 /// Measurement struct
 struct Measurement {
@@ -72,7 +85,7 @@ std::vector<Data> loadDataFromCSV(const std::string& filename, int startRow = 0,
                                   int maxRows = -1, int downsample = 1);
 
 /// Process data with EqF and print summary results
-void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
+void processDataWithEqF(AbcFilter& filter, const std::vector<Data>& data_list,
                         int printInterval = 10);
 
 //========================================================================
@@ -235,7 +248,7 @@ std::vector<Data> loadDataFromCSV(const std::string& filename, int startRow,
 }
 
 /// Takes in the data and runs an EqF on it and reports the results
-void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
+void processDataWithEqF(AbcFilter& filter, const std::vector<Data>& data_list,
                         int printInterval) {
   if (data_list.empty()) {
     std::cerr << "No data to process" << std::endl;
@@ -267,18 +280,7 @@ void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
 
   for (size_t i = 0; i < data_list.size(); i++) {
     const Data& data = data_list[i];
-    Matrix Q = abc::inputProcessNoise<n>(data.inputCovariance);
-    // Propagate filter with current input and time step
-    Vector6 u = abc::toInputVector(data.omega);
-    Lift lift_u(u);
-    InputOrbit psi_u(u);
-
-    // Use Explicit Matrices API
-    G X_hat = filter.groupEstimate();
-    Matrix A = abc::stateMatrixA<n>(psi_u, X_hat);
-    Matrix B = abc::inputMatrixB<n>(X_hat);
-    Matrix Qc = B * Q * B.transpose();  // continuous-time manifold covariance
-    filter.predictWithJacobian<2>(lift_u, A, Qc, data.dt);
+    filter.predict(data.omega, data.inputCovariance, data.dt);
 
     // Process all measurements
     for (const auto& measurement : data.measurements) {
@@ -294,14 +296,8 @@ void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
       }
 
       try {
-        Innovation innovation(measurement.y, measurement.d,
-                               measurement.cal_idx);
-        // Use Explicit Matrices API
-        X_hat = filter.groupEstimate();
-        const Matrix3 D = abc::outputMatrixD<n>(X_hat, measurement.cal_idx);
-        const Matrix3 R = D * measurement.R * D.transpose();
-        filter.update<Vector3>(innovation, Z_3x1, R);
-
+        filter.update(measurement.y, measurement.d, measurement.R,
+                      measurement.cal_idx);
         validMeasurements++;
       } catch (const std::exception& e) {
         std::cerr << "Error updating at t=" << data.t << ": " << e.what()
@@ -309,15 +305,17 @@ void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
       }
     }
 
-    // Get current state estimate
-    M estimate = filter.state();
+    // Get current estimates using accessor methods
+    Rot3 att_est = filter.attitude();
+    Vector3 bias_est = filter.bias();
+    Rot3 cal_est = filter.calibration(0);
 
     // Calculate errors
-    Vector3 att_error = Rot3::Logmap(data.xi.R.between(estimate.R));
-    Vector3 bias_error = estimate.b - data.xi.b;
+    Vector3 att_error = Rot3::Logmap(data.xi.R.between(att_est));
+    Vector3 bias_error = bias_est - data.xi.b;
     Vector3 cal_error = Z_3x1;
-    if (!data.xi.S.empty() && !estimate.S.empty()) {
-      cal_error = Rot3::Logmap(data.xi.S[0].between(estimate.S[0]));
+    if (!data.xi.S.empty()) {
+      cal_error = Rot3::Logmap(data.xi.S[0].between(cal_est));
     }
 
     // Store errors
@@ -353,14 +351,16 @@ void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
 
   // Calculate final errors from last data point
   const Data& final_data = data_list.back();
-  M final_estimate = filter.state();
+  Rot3 final_att_est = filter.attitude();
+  Vector3 final_bias_est = filter.bias();
+  Rot3 final_cal_est = filter.calibration(0);
+
   Vector3 final_att_error =
-      Rot3::Logmap(final_data.xi.R.between(final_estimate.R));
-  Vector3 final_bias_error = final_estimate.b - final_data.xi.b;
+      Rot3::Logmap(final_data.xi.R.between(final_att_est));
+  Vector3 final_bias_error = final_bias_est - final_data.xi.b;
   Vector3 final_cal_error = Z_3x1;
-  if (!final_data.xi.S.empty() && !final_estimate.S.empty()) {
-    final_cal_error =
-        Rot3::Logmap(final_data.xi.S[0].between(final_estimate.S[0]));
+  if (!final_data.xi.S.empty()) {
+    final_cal_error = Rot3::Logmap(final_data.xi.S[0].between(final_cal_est));
   }
 
   // Print summary statistics
@@ -388,16 +388,15 @@ void processDataWithEqF(EqFilter& filter, const std::vector<Data>& data_list,
   // Print a brief comparison of final estimate vs ground truth
   std::cout << "\n-- Final State vs Ground Truth --" << std::endl;
   std::cout << "Attitude (RPY) - Estimate: "
-            << (final_estimate.R.rpy() * RAD_TO_DEG).transpose()
+            << (final_att_est.rpy() * RAD_TO_DEG).transpose()
             << "° | Truth: " << (final_data.xi.R.rpy() * RAD_TO_DEG).transpose()
             << "°" << std::endl;
-  std::cout << "Bias - Estimate: " << final_estimate.b.transpose()
+  std::cout << "Bias - Estimate: " << final_bias_est.transpose()
             << " | Truth: " << final_data.xi.b.transpose() << std::endl;
 
-  if (!final_estimate.S.empty() && !final_data.xi.S.empty()) {
+  if (!final_data.xi.S.empty()) {
     std::cout << "Calibration (RPY) - Estimate: "
-              << (final_estimate.S[0].rpy() * RAD_TO_DEG).transpose()
-              << "° | Truth: "
+              << (final_cal_est.rpy() * RAD_TO_DEG).transpose() << "° | Truth: "
               << (final_data.xi.S[0].rpy() * RAD_TO_DEG).transpose() << "°"
               << std::endl;
   }
@@ -456,10 +455,8 @@ int main(int argc, char* argv[]) {
     initialSigma.diagonal().tail<3>() =
         Vector3::Constant(0.1);  // Calibration uncertainty
 
-    M initialState = M::identity();
-
-    // Create filter
-    EqFilter filter(initialState, initialSigma);
+    // Create filter with initial covariance (starts at identity state)
+    AbcFilter filter(initialSigma);
 
     // Process data
     processDataWithEqF(filter, data);

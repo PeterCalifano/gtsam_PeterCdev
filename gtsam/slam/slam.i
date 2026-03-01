@@ -21,7 +21,7 @@ template <T = {double, gtsam::Vector, gtsam::Point2, gtsam::Point3, gtsam::Rot2,
                gtsam::Similarity2, gtsam::Similarity3, gtsam::imuBias::ConstantBias}>
 virtual class BetweenFactor : gtsam::NoiseModelFactor {
   BetweenFactor(gtsam::Key key1, gtsam::Key key2, const T& relativePose,
-                const gtsam::noiseModel::Base* noiseModel);
+                const gtsam::noiseModel::Base* noiseModel = nullptr);
   T measured() const;
 
   // enabling serialization functionality
@@ -582,30 +582,36 @@ class InitializePose3 {
 };
 
 #include <gtsam/slam/KarcherMeanFactor-inl.h>
-template <T = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
-               gtsam::SO3, gtsam::SO4, gtsam::Rot3, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Gal3, gtsam::SL4}>
+template <T = {gtsam::Rot2, gtsam::Pose2, gtsam::SO3, gtsam::SO4, gtsam::Rot3,
+               gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3,
+               gtsam::Gal3, gtsam::SL4}>
 virtual class KarcherMeanFactor : gtsam::NonlinearFactor {
   KarcherMeanFactor(const gtsam::KeyVector& keys);
   KarcherMeanFactor(const gtsam::KeyVector& keys, int d, double beta);
 };
 
-template <T = {gtsam::Point2, gtsam::Rot2, gtsam::Pose2, gtsam::Point3,
-  gtsam::SO3, gtsam::SO4, gtsam::Rot3, gtsam::Pose3}>
+template <T = {gtsam::Rot2, gtsam::Pose2, gtsam::SO3, gtsam::SO4, gtsam::Rot3,
+               gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3,
+               gtsam::Gal3, gtsam::SL4}>
 T FindKarcherMean(const std::vector<T>& elements);
 
 #include <gtsam/slam/FrobeniusFactor.h>
 gtsam::noiseModel::Isotropic* ConvertNoiseModel(gtsam::noiseModel::Base* model,
                                                 size_t d);
 
-template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Gal3, gtsam::SL4}>
+template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2,
+               gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3,
+               gtsam::Gal3, gtsam::SL4}>
 class FrobeniusPrior : gtsam::NoiseModelFactor {
   FrobeniusPrior(gtsam::Key j, const gtsam::Matrix& M,
-    const gtsam::noiseModel::Base* model);
+    const gtsam::noiseModel::Base* model = nullptr);
 
     gtsam::Vector evaluateError(const T& g) const;
 };
 
-template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Gal3, gtsam::SL4}>
+template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2,
+               gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3,
+               gtsam::Gal3, gtsam::SL4}>
 virtual class FrobeniusFactor : gtsam::NoiseModelFactor {
   FrobeniusFactor(gtsam::Key key1, gtsam::Key key2);
   FrobeniusFactor(gtsam::Key j1, gtsam::Key j2, gtsam::noiseModel::Base* model);
@@ -614,7 +620,9 @@ virtual class FrobeniusFactor : gtsam::NoiseModelFactor {
 };
 
 // Available for all Matrix Lie groups
-template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2, gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3, gtsam::Gal3, gtsam::SL4}>
+template <T = {gtsam::Rot2, gtsam::Rot3, gtsam::SO3, gtsam::SO4, gtsam::Pose2,
+               gtsam::Pose3, gtsam::Similarity2, gtsam::Similarity3,
+               gtsam::Gal3, gtsam::SL4}>
 virtual class FrobeniusBetweenFactorNL : gtsam::NoiseModelFactor {
   FrobeniusBetweenFactorNL(gtsam::Key j1, gtsam::Key j2, const T& T12);
   FrobeniusBetweenFactorNL(gtsam::Key key1, gtsam::Key key2, const T& T12,

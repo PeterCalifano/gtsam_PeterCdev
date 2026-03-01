@@ -189,7 +189,7 @@ class DotWriter {
 
   std::map<gtsam::Key, gtsam::Vector2> variablePositions;
   std::map<char, double> positionHints;
-  std::set<gtsam::Key> boxes;
+  gtsam::KeySet boxes;
   std::map<size_t, gtsam::Vector2> factorPositions;
 };
 

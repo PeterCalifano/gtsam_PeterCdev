@@ -135,7 +135,8 @@ class ManifoldEKF {
     return P_ * H.transpose() * S.inverse();
   }
 
-  /// Joseph-form covariance update using a precomputed gain.
+  /// Joseph-form covariance update in the current tangent space using a
+  /// precomputed gain.
   template <typename GainMatrix, typename HMatrix, typename RMatrix>
   void JosephUpdate(const GainMatrix& K, const HMatrix& H, const RMatrix& R) {
     Jacobian I_KH = I_ - K * H;
@@ -151,6 +152,8 @@ class ManifoldEKF {
    * @param H Jacobian of the measurement function h.
    * @param z Observed measurement.
    * @param R Measurement noise covariance.
+   * @param performReset If true (default), performs a reset (transport) after
+   * update; otherwise, just retracts the state.
    */
   template <typename Measurement>
   void update(
@@ -158,7 +161,8 @@ class ManifoldEKF {
       const Eigen::Matrix<double, traits<Measurement>::dimension, Dim>& H,
       const Measurement& z,
       const Eigen::Matrix<double, traits<Measurement>::dimension,
-                          traits<Measurement>::dimension>& R) {
+                          traits<Measurement>::dimension>& R,
+      bool performReset = true) {
     static constexpr int MeasDim = traits<Measurement>::dimension;
 
     // Innovation: y = h(x_pred) - z. In tangent space: local(z, h(x_pred))
@@ -174,11 +178,14 @@ class ManifoldEKF {
     const TangentVector delta_xi =
         -K * innovation;  // delta_xi is Dim x 1 (or n_ x 1 if dynamic)
 
-    // Update state using retract: X_new = retract(X_old, delta_xi)
-    X_ = traits<M>::Retract(X_, delta_xi);
-
-    // Update covariance using Joseph form
+    // --- Update covariance in the tangent space at the current state
     this->JosephUpdate(K, H, R);
+
+    // Update state using retract/ transport or just retract
+    if (performReset)
+      reset(delta_xi);
+    else
+      X_ = traits<M>::Retract(X_, delta_xi);
   }
 
   /**
@@ -190,11 +197,13 @@ class ManifoldEKF {
    * @param h Measurement model function.
    * @param z Observed measurement.
    * @param R Measurement noise covariance.
+   * @param performReset If true (default), transport covariance after retract.
    */
   template <typename Measurement, typename MeasurementFunction>
   void update(MeasurementFunction&& h, const Measurement& z,
               const Eigen::Matrix<double, traits<Measurement>::dimension,
-                                  traits<Measurement>::dimension>& R) {
+                                  traits<Measurement>::dimension>& R,
+              bool performReset = true) {
     static_assert(IsManifold<Measurement>::value,
                   "Template parameter Measurement must be a GTSAM Manifold.");
 
@@ -203,17 +212,45 @@ class ManifoldEKF {
     Measurement prediction = h(X_, H);
 
     // Call the other update function
-    update<Measurement>(prediction, H, z, R);
+    update<Measurement>(prediction, H, z, R, performReset);
   }
 
-  /// Convenience bridge for wrappers: vector measurement update calling
-  /// update<Vector>. This overload exists to avoid templates in wrappers. It
-  /// validates sizes and forwards to the templated update with Measurement =
-  /// gtsam::Vector (dynamic size).
+  /**
+   * Convenience bridge for wrappers: vector measurement update calling
+   * update<Vector>. This overload exists to avoid templates in wrappers. It
+   * validates sizes and forwards to the templated update with Measurement =
+   * gtsam::Vector (dynamic size).
+   * @param prediction Predicted measurement vector.
+   * @param H Measurement Jacobian matrix.
+   * @param z Observed measurement vector.
+   * @param R Measurement noise covariance matrix.
+   * @param performReset If true (default), transport covariance after retract.
+   */
   void updateWithVector(const gtsam::Vector& prediction, const Matrix& H,
-                        const gtsam::Vector& z, const Matrix& R) {
+                        const gtsam::Vector& z, const Matrix& R,
+                        bool performReset = true) {
     validateInputs(prediction, H, z, R);
-    update<Vector>(prediction, H, z, R);
+    update<Vector>(prediction, H, z, R, performReset);
+  }
+
+  /**
+   * Reset step: retract the state by a tangent perturbation and, if available,
+   * transport the covariance from the old tangent space to the new tangent
+   * space.
+   *
+   * If the retract supports a Jacobian argument, we compute B and update
+   * P <- B P B^T. Otherwise, we leave the covariance unchanged.
+   */
+  void reset(const TangentVector& eta) {
+    if constexpr (HasRetractJacobian<M>::value) {
+      Jacobian B;
+      if constexpr (Dim == Eigen::Dynamic) B.resize(n_, n_);
+      X_ = traits<M>::Retract(X_, eta, &B);
+      P_ = B * P_ * B.transpose();
+    } else {
+      X_ = traits<M>::Retract(X_, eta);
+      // Covariance unchanged when Jacobian is not available.
+    }
   }
 
  protected:
@@ -243,6 +280,17 @@ class ManifoldEKF {
   Covariance P_;  ///< Covariance (Eigen::Matrix<double, Dim, Dim>).
   Jacobian I_;    ///< Identity matrix sized to the state dimension.
   int n_;         ///< Runtime tangent space dimension of M.
+
+ private:
+  // Detection helper: check if traits<T>::Retract(x, v, Jacobian*) is valid.
+  template <typename T, typename = void>
+  struct HasRetractJacobian : std::false_type {};
+  template <typename T>
+  struct HasRetractJacobian<
+      T, std::void_t<decltype(traits<T>::Retract(
+             std::declval<const T&>(),
+             std::declval<const typename traits<T>::TangentVector&>(),
+             (Jacobian*)nullptr))>> : std::true_type {};
 };
 
 }  // namespace gtsam

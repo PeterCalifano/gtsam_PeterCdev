@@ -47,12 +47,20 @@ const GaussianFactorGraph chain = {
     std::make_shared<JacobianFactor>(x4, I_1x1, I_1x1, chainNoise4)};
 const Ordering chainOrdering{x2, x1, x3, x4};
 
+MultifrontalSolver::Parameters noMergeParams() {
+  MultifrontalSolver::Parameters params;
+  params.mergeDimCap = 0;
+  params.leafMergeDimCap = 0;
+  return params;
+}
+
 }  // namespace
 
 /* ************************************************************************* */
-// Build the solver and validate initial structure and load.
+// Build the solver and validate initial structure and explicit load.
 TEST(MultifrontalSolver, Constructor) {
-  MultifrontalSolver solver(chain, chainOrdering);
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
+  solver.load(chain);
 
   // Verify roots
   EXPECT(solver.roots().size() == 1);
@@ -64,7 +72,7 @@ TEST(MultifrontalSolver, Constructor) {
   auto childClique = root->children[0];
 
   // Verify matrices in leaf (childClique)
-  EXPECT_LONGS_EQUAL(4, childClique->sbm().nBlocks());
+  EXPECT_LONGS_EQUAL(4, childClique->info().nBlocks());
   EXPECT_LONGS_EQUAL(2, childClique->Ab().rows());
   EXPECT_LONGS_EQUAL(4, childClique->Ab().nBlocks());
 
@@ -79,9 +87,36 @@ TEST(MultifrontalSolver, Constructor) {
 }
 
 /* ************************************************************************* */
+// Build the solver from precomputed data and validate structure and load.
+TEST(MultifrontalSolver, ConstructorPrecomputed) {
+  auto data = MultifrontalSolver::Precompute(chain, chainOrdering);
+  MultifrontalSolver solver(std::move(data), chainOrdering, noMergeParams());
+  solver.load(chain);
+
+  // Verify roots
+  EXPECT(solver.roots().size() == 1);
+  auto root = solver.roots()[0];
+  EXPECT(root != nullptr);
+
+  // Root should have 1 child {x2, x1}
+  EXPECT_LONGS_EQUAL(1, root->children.size());
+  auto childClique = root->children[0];
+
+  // Verify matrices in leaf (childClique)
+  CHECK(childClique->useQR() == false);
+  EXPECT_LONGS_EQUAL(4, childClique->info().nBlocks());
+  EXPECT_LONGS_EQUAL(2, childClique->Ab().rows());
+  EXPECT_LONGS_EQUAL(4, childClique->Ab().nBlocks());
+
+  // Verify load for childClique
+  Matrix A0 = childClique->Ab()(0);
+  EXPECT(assert_equal((Matrix(2, 1) << 2., 1.).finished(), A0));
+}
+
+/* ************************************************************************* */
 // Reload numerical values and ensure Ab updates match whitening.
 TEST(MultifrontalSolver, Load) {
-  MultifrontalSolver solver(chain, chainOrdering);
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
 
   // Create a new graph with doubled values
   GaussianFactorGraph chain2;
@@ -109,7 +144,8 @@ TEST(MultifrontalSolver, Load) {
 /* ************************************************************************* */
 // Compare solver output against multifrontal elimination baseline.
 TEST(MultifrontalSolver, Eliminate) {
-  MultifrontalSolver solver(chain, chainOrdering);
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
+  solver.load(chain);
   solver.eliminateInPlace();
 
   // Solve
@@ -123,9 +159,126 @@ TEST(MultifrontalSolver, Eliminate) {
 }
 
 /* ************************************************************************* */
+// deltaError from the solver matches GaussianFactorGraph for the
+// solver-produced (optimal) delta.
+TEST(MultifrontalSolver, DeltaErrorMatchesGraph) {
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
+  solver.eliminateInPlace(chain);
+
+  const VectorValues& delta = solver.updateSolution();
+
+  double oldFast = 0.0;
+  double newFast = 0.0;
+  double deltaFast = solver.deltaError(&oldFast, &newFast);
+
+  double oldRef = 0.0;
+  double newRef = 0.0;
+  double deltaRef = chain.deltaError(delta, &oldRef, &newRef);
+
+  DOUBLES_EQUAL(oldRef, oldFast, 1e-9);
+  DOUBLES_EQUAL(newRef, newFast, 1e-9);
+  DOUBLES_EQUAL(deltaRef, deltaFast, 1e-9);
+}
+
+/* ************************************************************************* */
+// deltaError from the solver matches GaussianFactorGraph on an
+// overdetermined system with nonzero residual at the solution.
+TEST(MultifrontalSolver, DeltaErrorMatchesGraphInconsistent) {
+  const SharedDiagonal noise = noiseModel::Isotropic::Sigma(1, 1.0);
+  GaussianFactorGraph graph;
+  graph.emplace_shared<JacobianFactor>(x1, I_1x1,
+                                       (Vector(1) << 1.0).finished(), noise);
+  graph.emplace_shared<JacobianFactor>(x1, I_1x1,
+                                       (Vector(1) << -2.0).finished(), noise);
+  const Ordering ordering{x1};
+  MultifrontalSolver solver(graph, ordering, noMergeParams());
+  solver.eliminateInPlace(graph);
+
+  const VectorValues& delta = solver.updateSolution();
+
+  double oldFast = 0.0;
+  double newFast = 0.0;
+  double deltaFast = solver.deltaError(&oldFast, &newFast);
+
+  double oldRef = 0.0;
+  double newRef = 0.0;
+  double deltaRef = graph.deltaError(delta, &oldRef, &newRef);
+
+  DOUBLES_EQUAL(oldRef, oldFast, 1e-9);
+  DOUBLES_EQUAL(newRef, newFast, 1e-9);
+  DOUBLES_EQUAL(deltaRef, deltaFast, 1e-9);
+}
+
+/* ************************************************************************* */
+// Load + eliminate in one traversal matches standard elimination.
+TEST(MultifrontalSolver, EliminateWithLoad) {
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
+  solver.eliminateInPlace(chain);
+
+  const VectorValues& actual = solver.updateSolution();
+
+  GaussianBayesTree expectedBT = *chain.eliminateMultifrontal(chainOrdering);
+  VectorValues expected = expectedBT.optimize();
+
+  EXPECT(assert_equal(expected, actual, 1e-9));
+}
+
+/* ************************************************************************* */
+// deltaError match when QR is forced, exercising the QR leaf RSd_ path.
+TEST(MultifrontalSolver, DeltaErrorMatchesGraphQR) {
+  auto qrParams = noMergeParams();
+  qrParams.qrMode = MultifrontalParameters::QRMode::Force;
+  MultifrontalSolver solver(chain, chainOrdering, qrParams);
+  solver.eliminateInPlace(chain);
+
+  const VectorValues& delta = solver.updateSolution();
+
+  double oldFast = 0.0;
+  double newFast = 0.0;
+  double deltaFast = solver.deltaError(&oldFast, &newFast);
+
+  double oldRef = 0.0;
+  double newRef = 0.0;
+  double deltaRef = chain.deltaError(delta, &oldRef, &newRef);
+
+  DOUBLES_EQUAL(oldRef, oldFast, 1e-9);
+  DOUBLES_EQUAL(newRef, newFast, 1e-9);
+  DOUBLES_EQUAL(deltaRef, deltaFast, 1e-9);
+}
+
+/* ************************************************************************* */
+// Forcing QR enables QR on all leaves and matches legacy QR elimination.
+TEST(MultifrontalSolver, ForceQRMatchesDenseQR) {
+  auto qrParams = noMergeParams();
+  qrParams.qrMode = MultifrontalParameters::QRMode::Force;
+  MultifrontalSolver solverQR(chain, chainOrdering, qrParams);
+  solverQR.eliminateInPlace(chain);
+
+  size_t leafCount = 0;
+  size_t qrLeafCount = 0;
+  solverQR.runTopDown([&](MultifrontalClique& node) {
+    if (node.children.empty()) {
+      ++leafCount;
+      if (node.useQR()) {
+        ++qrLeafCount;
+      }
+    }
+  });
+  CHECK(leafCount > 0);
+  CHECK(leafCount == qrLeafCount);
+
+  const VectorValues& actual = solverQR.updateSolution();
+
+  VectorValues expected = chain.optimize(chainOrdering, EliminateQR);
+
+  EXPECT(assert_equal(expected, actual, 1e-9));
+}
+
+/* ************************************************************************* */
 // Compare marginals from in-place Bayes tree against standard elimination.
 TEST(MultifrontalSolver, ComputeBayesTreeMarginals) {
-  MultifrontalSolver solver(chain, chainOrdering);
+  MultifrontalSolver solver(chain, chainOrdering, noMergeParams());
+  solver.load(chain);
   solver.eliminateInPlace();
 
   GaussianBayesTree actualBT = solver.computeBayesTree();
@@ -160,7 +313,8 @@ TEST(MultifrontalSolver, ComputeBayesTreeMarginalsConstrainedChain) {
   constrainedChain.emplace_shared<JacobianFactor>(
       x2, I_1x1, (Vector(1) << 0.0).finished(), hardConstraint);
 
-  MultifrontalSolver solver(constrainedChain, chainOrdering);
+  MultifrontalSolver solver(constrainedChain, chainOrdering, noMergeParams());
+  solver.load(constrainedChain);
   solver.eliminateInPlace();
 
   GaussianBayesTree actualBT = solver.computeBayesTree();
@@ -188,7 +342,8 @@ TEST(MultifrontalSolver, ConstrainedNoiseFeasible) {
       x1, I_1x1, (Vector(1) << 100.0).finished(), softNoise);
   const Ordering ordering{x1};
 
-  MultifrontalSolver solver(graph, ordering);
+  MultifrontalSolver solver(graph, ordering, noMergeParams());
+  solver.load(graph);
   solver.eliminateInPlace();
   const VectorValues& actual = solver.updateSolution();
 
@@ -209,7 +364,8 @@ TEST(MultifrontalSolver, ConstrainedNoiseUnsupported) {
   const Ordering ordering{x1};
 
   CHECK_EXCEPTION(
-      { MultifrontalSolver solver(graph, ordering); }, std::runtime_error);
+      { MultifrontalSolver solver(graph, ordering, noMergeParams()); },
+      std::runtime_error);
 }
 
 /* ************************************************************************* */
@@ -224,7 +380,8 @@ TEST(MultifrontalSolver, ConstrainedNoiseUnaryFeasible) {
                                        softNoise);
   const Ordering ordering{x1};
 
-  MultifrontalSolver solver(graph, ordering);
+  MultifrontalSolver solver(graph, ordering, noMergeParams());
+  solver.load(graph);
   solver.eliminateInPlace();
   const VectorValues& actual = solver.updateSolution();
 
@@ -241,7 +398,8 @@ TEST(MultifrontalSolver, ConstrainedNoiseMixedKeysUnsupported) {
   const Ordering ordering{x1, x2};
 
   CHECK_EXCEPTION(
-      { MultifrontalSolver solver(graph, ordering); }, std::runtime_error);
+      { MultifrontalSolver solver(graph, ordering, noMergeParams()); },
+      std::runtime_error);
 }
 
 /* ************************************************************************* */
@@ -260,7 +418,8 @@ TEST(MultifrontalSolver, WeightedScalarMeasurements) {
                                        noiseModel::Isotropic::Sigma(1, sigma2));
 
   const Ordering ordering{x1};
-  MultifrontalSolver solver(graph, ordering);
+  MultifrontalSolver solver(graph, ordering, noMergeParams());
+  solver.load(graph);
   solver.eliminateInPlace();
   const VectorValues& actual = solver.updateSolution();
 
@@ -268,27 +427,28 @@ TEST(MultifrontalSolver, WeightedScalarMeasurements) {
 }
 
 /* ************************************************************************* */
-// Hessian factors contribute directly to the augmented normal equations.
+// Hessian factors are rejected by the multifrontal solver.
 TEST(MultifrontalSolver, HessianFactors) {
   GaussianFactorGraph graph;
   graph.emplace_shared<HessianFactor>(x1, (Matrix(1, 1) << 4.0).finished(),
                                       (Vector(1) << 8.0).finished(), 0.0);
 
   const Ordering ordering{x1};
-  MultifrontalSolver solver(graph, ordering);
-  solver.eliminateInPlace();
-  const VectorValues& actual = solver.updateSolution();
-
-  EXPECT_DOUBLES_EQUAL(2.0, actual.at(x1)(0), 1e-9);
+  CHECK_EXCEPTION(
+      { MultifrontalSolver solver(graph, ordering, noMergeParams()); },
+      std::runtime_error);
 }
 
 /* ************************************************************************* */
 // Merge threshold changes the clique count.
 TEST(MultifrontalSolver, MergeDimCap) {
-  MultifrontalSolver solverNoMerge(chain, chainOrdering, 0);
+  MultifrontalSolver::Parameters noMerge = noMergeParams();
+  MultifrontalSolver solverNoMerge(chain, chainOrdering, noMerge);
   EXPECT_LONGS_EQUAL(2, solverNoMerge.cliqueCount());
 
-  MultifrontalSolver solverMerge(chain, chainOrdering, 1000);
+  MultifrontalSolver::Parameters merge = noMergeParams();
+  merge.mergeDimCap = 1000;
+  MultifrontalSolver solverMerge(chain, chainOrdering, merge);
   EXPECT_LONGS_EQUAL(1, solverMerge.cliqueCount());
 }
 
@@ -303,13 +463,14 @@ TEST(MultifrontalSolver, BalancedSmoother) {
   // Create the Bayes tree ordering
   const Ordering ordering{X(1), X(3), X(5), X(7), X(2), X(6), X(4)};
 
-  MultifrontalSolver solver(smoother, ordering);
+  MultifrontalSolver solver(smoother, ordering, noMergeParams());
+  solver.load(smoother);
 
   // Verify roots
   EXPECT(solver.roots().size() == 1);
   auto root = solver.roots()[0];
 
-  EXPECT_LONGS_EQUAL(root->Ab().nBlocks(), root->sbm().nBlocks());
+  EXPECT_LONGS_EQUAL(root->Ab().nBlocks(), root->info().nBlocks());
 
   // Check a leaf clique block structure.
   MultifrontalSolver::CliquePtr leaf = nullptr;
@@ -318,7 +479,7 @@ TEST(MultifrontalSolver, BalancedSmoother) {
       [&](MultifrontalSolver::CliquePtr c) {
         if (!c) return;
         if (c->children.empty()) {
-          const size_t blocks = c->sbm().nBlocks();
+          const size_t blocks = c->info().nBlocks();
           if (blocks < minBlocks) {
             minBlocks = blocks;
             leaf = c;
@@ -332,6 +493,7 @@ TEST(MultifrontalSolver, BalancedSmoother) {
   EXPECT_LONGS_EQUAL(3, minBlocks);
 
   // Eliminate and solve
+  solver.load(smoother);
   solver.eliminateInPlace();
   const VectorValues& actual = solver.updateSolution();
 

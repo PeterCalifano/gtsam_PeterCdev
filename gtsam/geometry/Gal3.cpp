@@ -170,6 +170,45 @@ const double& Gal3::time(OptionalJacobian<1, 10> H) const {
 }
 
 //------------------------------------------------------------------------------
+double Gal3::range(const Point3& point, OptionalJacobian<1, 10> Hself,
+                   OptionalJacobian<1, 3> Hpoint) const {
+  const Vector3 delta = point - r_;
+  const double r = delta.norm();
+  if (!Hself && !Hpoint) return r;
+
+  const Vector3 u = delta / r;  // unit vector from translation to point
+  const Matrix13 D_r_point = u.transpose();
+
+  if (Hpoint) *Hpoint = D_r_point;
+  if (Hself) {
+    Hself->setZero();
+    // translation() = r + R * dRho + v * dAlpha, so chain those.
+    Hself->block<1, 3>(0, 6) = -D_r_point * R_.matrix();  // rho
+    (*Hself)(0, 9) = -D_r_point.dot(v_);                  // alpha
+  }
+  return r;
+}
+
+//------------------------------------------------------------------------------
+Unit3 Gal3::bearing(const Point3& point, OptionalJacobian<2, 10> Hself,
+                    OptionalJacobian<2, 3> Hpoint) const {
+  const Pose3 pose(R_, r_);
+  Matrix26 Hpose;
+  OptionalJacobian<2, 6> HposeOptional(Hself ? &Hpose : nullptr);
+  const Unit3 b = pose.bearing(point, HposeOptional, Hpoint);
+
+  if (Hself) {
+    Hself->setZero();
+    Hself->block<2, 3>(0, 0) = Hpose.block<2, 3>(0, 0);  // w
+    Hself->block<2, 3>(0, 6) = Hpose.block<2, 3>(0, 3);  // rho
+
+    const Vector3 bodyVelocity = R_.unrotate(v_);
+    Hself->col(9) = Hpose.block<2, 3>(0, 3) * bodyVelocity;  // alpha
+  }
+  return b;
+}
+
+//------------------------------------------------------------------------------
 Matrix5 Gal3::matrix() const {
     // Returns 5x5 matrix representation as in Equation 9, Page 5
     Matrix5 M = Matrix5::Identity();
@@ -350,29 +389,6 @@ Gal3::Jacobian Gal3::AdjointMap() const {
   return Ad;
 }
 
-//------------------------------------------------------------------------------
-Gal3::TangentVector Gal3::Adjoint(const TangentVector& xi, OptionalJacobian<10, 10> H_g, OptionalJacobian<10, 10> H_xi) const {
-    Jacobian Ad = AdjointMap();
-    TangentVector y = Ad * xi;
-
-    if (H_xi) {
-        *H_xi = Ad;
-    }
-
-    if (H_g) {
-        // NOTE: Using numerical derivative for the Jacobian with respect to
-        // the group element instead of deriving the analytical expression.
-        // Future work to use analytical instead.
-        std::function<TangentVector(const Gal3&, const TangentVector&)> adjoint_action_wrt_g =
-          [&](const Gal3& g_in, const TangentVector& xi_in) {
-              return g_in.Adjoint(xi_in);
-          };
-        *H_g = numericalDerivative21(adjoint_action_wrt_g, *this, xi, 1e-7);
-    }
-    return y;
-}
-
-//------------------------------------------------------------------------------
 Gal3::Jacobian Gal3::adjointMap(const TangentVector& xi) {
   // Implements adjoint representation as in Equation 28, Page 10
   const Matrix3 Omega = skewSymmetric(xi_w(xi));
@@ -387,16 +403,6 @@ Gal3::Jacobian Gal3::adjointMap(const TangentVector& xi) {
       rhoHat, -alpha * I_3x3, Omega, nu,  //
       Z_9x1.transpose(), 0.0;
   return ad;
-}
-
-//------------------------------------------------------------------------------
-Gal3::TangentVector Gal3::adjoint(const TangentVector& xi, const TangentVector& y, OptionalJacobian<10, 10> Hxi, OptionalJacobian<10, 10> Hy) {
-    Jacobian ad_xi = adjointMap(xi);
-    if (Hy) *Hy = ad_xi;
-    if (Hxi) {
-         *Hxi = -adjointMap(y);
-    }
-    return ad_xi * y;
 }
 
 //------------------------------------------------------------------------------

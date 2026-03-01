@@ -16,6 +16,7 @@ install*
 .vscode
 .env
 /.vs/
+vcpkg_installed/
 /CMakeSettings.json
 # for QtCreator:
 CMakeLists.txt.user*
@@ -32,3 +33,5 @@ doc/#*.lyx#
 /cmake-build-debug/
 .venv/
 conductor/
+.ccache/
+gtsam_unstable/timing/data/

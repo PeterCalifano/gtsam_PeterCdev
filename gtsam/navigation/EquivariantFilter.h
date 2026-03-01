@@ -93,7 +93,7 @@ class EquivariantFilter : public ManifoldEKF<M> {
   using Base::state;
 
   /// errorCovariance that returns P_, on the equivariant filter error
-  Matrix errorCovariance() const { return this->P_; }
+  const typename Base::Covariance& errorCovariance() const { return this->P_; }
 
   /// Covariance in the tangent space at the current state.
   CovarianceM covariance() const {

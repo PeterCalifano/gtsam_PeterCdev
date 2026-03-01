@@ -18,14 +18,19 @@
 
 #pragma once
 
+#include <gtsam/base/ForestTraversal.h>
 #include <gtsam/inference/Key.h>
 #include <gtsam/inference/Ordering.h>
 #include <gtsam/linear/GaussianFactorGraph.h>
+#include <gtsam/linear/MultifrontalParameters.h>
 #include <gtsam/linear/VectorValues.h>
+#include <gtsam/symbolic/IndexedJunctionTree.h>
 
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -35,46 +40,117 @@ class GaussianBayesTree;
 class MultifrontalClique;
 
 /**
+ * Exception for unsupported use of the new multifrontal solver.
+ * Includes guidance for using the legacy solver instead.
+ */
+class GTSAM_EXPORT MultifrontalSolverNotSupported : public std::runtime_error {
+ public:
+  explicit MultifrontalSolverNotSupported(const std::string& reason)
+      : std::runtime_error(BuildMessage(reason)) {}
+
+ private:
+  static std::string BuildMessage(const std::string& reason) {
+    std::string message = "MultifrontalSolver not supported: " + reason + ". ";
+    message +=
+        "Enable GTSAM_ALLOW_DEPRECATED_SINCE_V43 to default to the legacy "
+        "solver, or set linearSolverType = MULTIFRONTAL_CHOLESKY.";
+    return message;
+  }
+};
+
+/**
  * Imperative-style multifrontal solver for Gaussian factor graphs.
  *
  * This class pre-allocates all necessary memory for the elimination tree and
  * provides efficient methods for loading new factors, eliminating the graph,
  * and solving for the update vector.
+ *
+ * @note Only JacobianFactor inputs are supported. Any non-Jacobian factors
+ * will throw during construction/precompute or load.
+ *
+ * @note Clique merging has two optional phases: an initial leaf-merge pass
+ * (leafMergeDimCap) that merges multiple leaf children into a common parent
+ * while the parent's total dimension plus merged frontal dimensions stays
+ * below the cap, followed by a bottom-up pass (mergeDimCap) that merges any
+ * remaining small child cliques into their parent. Both phases run before
+ * numeric elimination and can reduce tiny cliques and improve cache locality.
+ * Defaults are conservative and may need tuning per machine or dataset.
  */
-class GTSAM_EXPORT MultifrontalSolver {
+class GTSAM_EXPORT MultifrontalSolver
+    : public ForestTraversal<MultifrontalSolver, MultifrontalClique> {
  public:
+  /// Tuning parameters for traversal and reporting.
+  using Parameters = MultifrontalParameters;
+
+  /// Precomputed symbolic and sizing data for multifrontal solver construction.
+  struct PrecomputedData {
+    std::map<Key, size_t> dims;                 ///< Map from variable key to dimension.
+    std::unordered_set<Key> fixedKeys;          ///< Keys fixed by constrained factors.
+    IndexedJunctionTree indexedJunctionTree;    ///< Precomputed indexed junction tree.
+    std::vector<size_t> rowCounts;              ///< Row counts indexed by factor index.
+  };
+
   /// Shared pointer to a MultifrontalClique.
   using CliquePtr = std::shared_ptr<MultifrontalClique>;
   /// Node type for tree traversal utilities.
   using Node = MultifrontalClique;
 
- private:
+ protected:
   std::vector<CliquePtr> roots_;       ///< Roots of the elimination tree.
   std::vector<CliquePtr> cliques_;     ///< All cliques in the solver.
   std::map<Key, size_t> dims_;         ///< Map from variable key to dimension.
   mutable VectorValues solution_;      ///< Cached solution vector.
   std::unordered_set<Key> fixedKeys_;  ///< Keys fixed by constrained factors.
+  bool loaded_ = false;                ///< Whether load() has been called.
+  bool eliminated_ = false;            ///< Whether eliminateInPlace() ran.
+  Parameters params_;                  ///< Tunable solver parameters.
+  double lastOldError_ = 0.0;          ///< Cached old linearized error.
+  double lastNewError_ = 0.0;          ///< Cached new linearized error.
+  bool hasDeltaError_ = false;         ///< Whether updateSolution computed it.
 
  public:
   /**
    * Construct the solver from a factor graph and an ordering.
-   * This builds the symbolic junction tree and pre-allocates all matrices.
+   * This builds the indexed junction tree and pre-allocates all matrices.
+   * Call load() before eliminating to populate numerical values.
    * @param graph The factor graph to solve.
+   *              Must contain only JacobianFactor instances.
    * @param ordering The variable ordering to use for elimination.
-   * @param mergeDimCap Merge a child if its frontal dimension plus the
-   * parent's total dimension is below this threshold (0 disables merging).
-   * @param reportStream Optional stream to report clique structure stats
-   * (frontals, separators, total dims, and children).
+   * @param params Tunable parameters for traversal and reporting.
    */
   MultifrontalSolver(const GaussianFactorGraph& graph, const Ordering& ordering,
-                     size_t mergeDimCap = 0,
-                     std::ostream* reportStream = nullptr);
+                     const Parameters& params = Parameters{});
+
+  /**
+   * Construct the solver from precomputed symbolic data.
+   * Call load() before eliminating to populate numerical values.
+   * @param data Precomputed symbolic structure and sizing data.
+   * @param ordering The variable ordering to use for seeding solution storage.
+   * @param params Tunable parameters for traversal and reporting.
+   */
+  MultifrontalSolver(PrecomputedData data, const Ordering& ordering,
+                     const Parameters& params = Parameters{});
+
+  /**
+   * Precompute symbolic structure and sizing data from a factor graph.
+   * This builds an IndexedJunctionTree that can be reused across multiple
+   * solver instances when the graph structure and ordering remain unchanged.
+   * Only JacobianFactor inputs are supported.
+   * 
+   * @param graph The factor graph (must contain only JacobianFactor instances)
+   * @param ordering The variable elimination ordering
+   * @return PrecomputedData containing the indexed junction tree and sizing info
+   */
+  static PrecomputedData Precompute(const GaussianFactorGraph& graph,
+                                    const Ordering& ordering);
 
   /**
    * Load new numerical values from the factor graph.
    * This overwrites the values in the pre-allocated matrices.
    *
-   * @param graph The factor graph with updated values (structure must match).
+   * @param graph The factor graph with updated values (structure must match
+   *              the graph used to construct/precompute this solver, apart
+   *              from updated numerical values).
    */
   void load(const GaussianFactorGraph& graph);
 
@@ -83,6 +159,12 @@ class GTSAM_EXPORT MultifrontalSolver {
    * This operates in-place on the pre-allocated matrices.
    */
   void eliminateInPlace();
+
+  /**
+   * Load and eliminate the graph in a single traversal.
+   * This calls fillAb() and eliminateInPlace() per clique in post-order.
+   */
+  void eliminateInPlace(const GaussianFactorGraph& graph);
 
   /**
    * Compute a Bayes tree from the in-place Cholesky factorization.
@@ -97,7 +179,14 @@ class GTSAM_EXPORT MultifrontalSolver {
    *
    * @return Reference to the internally cached solution vector.
    */
-  const VectorValues& updateSolution() const;
+  const VectorValues& updateSolution();
+
+  /**
+   * Return the linearized delta error from the last updateSolution() call.
+   * Optionally returns the old and new linearized errors.
+   */
+  double deltaError(double* oldError = nullptr,
+                    double* newError = nullptr) const;
 
   /// Accessor for the roots of the elimination tree.
   const std::vector<CliquePtr>& roots() const { return roots_; }

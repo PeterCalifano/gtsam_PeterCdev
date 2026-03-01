@@ -18,8 +18,9 @@
 
 #pragma once
 
-#include <gtsam/base/Testable.h>
+#include <gtsam/base/Manifold.h>
 #include <gtsam/base/Matrix.h>
+#include <gtsam/base/Testable.h>
 #include <gtsam/base/std_optional_serialization.h>
 #include <gtsam/dllexport.h>
 #include <gtsam/linear/LossFunctions.h>
@@ -32,6 +33,7 @@
 #endif
 
 #include <optional>
+#include <type_traits>
 
 namespace gtsam {
 
@@ -152,6 +154,18 @@ namespace gtsam {
     };
 
     //---------------------------------------------------------------------------------------
+    /// Return true if the model dimension matches the manifold dimension.
+    template <class T>
+    inline bool matchesDimension(const Base& model, const T& measured) {
+      static_assert(IsManifold<T>::value,
+                    "noiseModel::matchesDimension requires a manifold type.");
+      if constexpr (traits<T>::dimension == Eigen::Dynamic) {
+        return model.dim() ==
+               static_cast<size_t>(traits<T>::GetDimension(measured));
+      } else {
+        return model.dim() == static_cast<size_t>(traits<T>::dimension);
+      }
+    }
 
     /**
      * Gaussian implements the mathematical model
@@ -223,6 +237,8 @@ namespace gtsam {
       Vector sigmas() const override;
       Vector whiten(const Vector& v) const override;
       Vector unwhiten(const Vector& v) const override;
+      void unwhitenInPlace(Vector& v) const override;
+      void unwhitenInPlace(Eigen::Block<Vector>& v) const override;
 
       /**
        * Multiply a derivative with R (derivative of whiten)
@@ -344,11 +360,17 @@ namespace gtsam {
 
       void print(const std::string& name) const override;
       Vector sigmas() const override { return sigmas_; }
+      /// Return standard deviations without copying.
+      inline const Vector& sigmasRef() const { return sigmas_; }
       Vector whiten(const Vector& v) const override;
       Vector unwhiten(const Vector& v) const override;
+      void whitenInPlace(Vector& v) const override;
+      void unwhitenInPlace(Vector& v) const override;
       Matrix Whiten(const Matrix& H) const override;
       void WhitenInPlace(Matrix& H) const override;
       void WhitenInPlace(Eigen::Block<Matrix> H) const override;
+      void whitenInPlace(Eigen::Block<Vector>& v) const override;
+      void unwhitenInPlace(Eigen::Block<Vector>& v) const override;
 
       /**
        * Return standard deviations (sqrt of diagonal)
@@ -495,6 +517,8 @@ namespace gtsam {
 
       /// Calculates error vector with weights applied
       Vector whiten(const Vector& v) const override;
+      void whitenInPlace(Vector& v) const override;
+      void whitenInPlace(Eigen::Block<Vector>& v) const override;
 
       /// Whitening functions will perform partial whitening on rows
       /// with a non-zero sigma.  Other rows remain untouched.
@@ -592,6 +616,8 @@ namespace gtsam {
       void WhitenInPlace(Matrix& H) const override;
       void whitenInPlace(Vector& v) const override;
       void WhitenInPlace(Eigen::Block<Matrix> H) const override;
+      void unwhitenInPlace(Vector& v) const override;
+      void unwhitenInPlace(Eigen::Block<Vector>& v) const override;
 
       /**
        * Return standard deviation
@@ -636,6 +662,23 @@ namespace gtsam {
        */
       static shared_ptr Create(size_t dim) {
         return shared_ptr(new Unit(dim));
+      }
+
+      /**
+       * Create a unit covariance noise model for a measurement type.
+       * Reuse a cached instance for fixed-size types.
+       */
+      template <class T, std::enable_if_t<!std::is_integral_v<T>, int> = 0>
+      static shared_ptr Create(const T& measured) {
+        static_assert(IsManifold<T>::value,
+                      "noiseModel::Unit::Create requires a manifold type.");
+        if constexpr (traits<T>::dimension == Eigen::Dynamic) {
+          return Create(static_cast<size_t>(traits<T>::GetDimension(measured)));
+        } else {
+          static const shared_ptr kDefault =
+              Create(static_cast<size_t>(traits<T>::dimension));
+          return kDefault;
+        }
       }
 
       /// true if a unit noise model, saves slow/clumsy dynamic casting
@@ -720,6 +763,7 @@ namespace gtsam {
       { Vector b; Matrix B=A; this->WhitenSystem(B,b); return B; }
       inline Vector unwhiten(const Vector& /*v*/) const override
       { throw std::invalid_argument("unwhiten is not currently supported for robust noise models."); }
+      inline void whitenInPlace(Vector& v) const override { this->WhitenSystem(v); }
       /// Compute loss from the m-estimator using the Mahalanobis distance.
       double loss(const double squared_distance) const override {
         return robust_->loss(std::sqrt(squared_distance));
@@ -759,6 +803,16 @@ namespace gtsam {
 
     // Helper function
     GTSAM_EXPORT std::optional<Vector> checkIfDiagonal(const Matrix& M);
+
+    /// Create
+    template <class T>
+    Base::shared_ptr validOrDefault(const T& value,
+                                    const Base::shared_ptr& model) {
+      if (!model) return noiseModel::Unit::Create(value);
+      if (noiseModel::matchesDimension(*model, value)) return model;
+      throw std::runtime_error(
+          "noiseModel::validOrDefault: mis-matched model dimension.");
+    }
 
   } // namespace noiseModel
 

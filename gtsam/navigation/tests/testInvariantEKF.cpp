@@ -65,7 +65,7 @@ TEST(IEKF_Pose2, PredictUpdateSequence) {
   EXPECT(assert_equal(P1_expected, ekf.covariance(), 1e-9));
 
   // --- First Update ---
-  ekf.update(h_gps, z1, R);
+  ekf.update(h_gps, z1, R, false);
 
   // Calculate expected state and covariance (manual Kalman steps)
   Matrix H1;  // H = dh/dlocal(X) -> 2x3
@@ -97,7 +97,7 @@ TEST(IEKF_Pose2, PredictUpdateSequence) {
   EXPECT(assert_equal(P2_expected, ekf.covariance(), 1e-9));
 
   // --- Second Update ---
-  ekf.update(h_gps, z2, R);
+  ekf.update(h_gps, z2, R, false);
 
   // Calculate expected state and covariance (manual Kalman steps)
   Matrix H2;  // 2x3

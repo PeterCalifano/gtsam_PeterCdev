@@ -203,18 +203,6 @@ virtual class LinearContainerFactor : gtsam::NonlinearFactor {
   void serializable() const;
 };  // \class LinearContainerFactor
 
-// Summarization functionality
-//#include <gtsam/nonlinear/summarization.h>
-//
-//// Uses partial QR approach by default
-// gtsam::GaussianFactorGraph summarize(
-//    const gtsam::NonlinearFactorGraph& graph, const gtsam::Values& values,
-//    const gtsam::KeySet& saved_keys);
-//
-// gtsam::NonlinearFactorGraph summarizeAsNonlinearContainer(
-//    const gtsam::NonlinearFactorGraph& graph, const gtsam::Values& values,
-//    const gtsam::KeySet& saved_keys);
-
 //*************************************************************************
 // Nonlinear optimizers
 //*************************************************************************
@@ -312,6 +300,11 @@ enum GncLossType {
   TLS /*Truncated least squares*/
 };
 
+enum GncScheduler {
+  Linear,
+  SuperLinear
+};
+
 template<PARAMS>
 virtual class GncParams {
   GncParams(const PARAMS& baseOptimizerParams);
@@ -325,6 +318,8 @@ virtual class GncParams {
   gtsam::This::Verbosity verbosity;
   gtsam::This::IndexVector knownInliers;
   gtsam::This::IndexVector knownOutliers;
+  bool allowNonNoiseModelFactors;
+  gtsam::GncScheduler scheduler;
 
   void setLossType(const gtsam::GncLossType type);
   void setMaxIterations(const size_t maxIter);
@@ -334,6 +329,8 @@ virtual class GncParams {
   void setVerbosityGNC(const gtsam::This::Verbosity value);
   void setKnownInliers(const gtsam::This::IndexVector& knownIn);
   void setKnownOutliers(const gtsam::This::IndexVector& knownOut);
+  void setAllowNonNoiseModelFactors(bool allow);
+  void setScheduler(const gtsam::GncScheduler scheduler);
   void print(const string& str = "GncParams: ") const;
   
   enum Verbosity {
@@ -637,7 +634,7 @@ template <T = {double,
                gtsam::imuBias::ConstantBias}>
 virtual class PriorFactor : gtsam::NoiseModelFactor {
   PriorFactor(gtsam::Key key, const T& prior,
-              const gtsam::noiseModel::Base* noiseModel);
+              const gtsam::noiseModel::Base* noiseModel = nullptr);
   T prior() const;
 
   // enabling serialization functionality

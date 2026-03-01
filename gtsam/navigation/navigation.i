@@ -45,8 +45,9 @@ class ConstantBias {
 class NavState {
   // Constructors
   NavState();
-  NavState(const gtsam::Rot3& R, const gtsam::Point3& t, gtsam::Vector v);
-  NavState(const gtsam::Pose3& pose, gtsam::Vector v);
+  NavState(const gtsam::Rot3& R, const gtsam::Point3& t,
+           const gtsam::Vector3& v);
+  NavState(const gtsam::Pose3& pose, const gtsam::Vector3& v);
 
   // Testable
   void print(string s = "") const;
@@ -55,8 +56,26 @@ class NavState {
   // Access
   gtsam::Rot3 attitude() const;
   gtsam::Point3 position() const;
-  gtsam::Vector velocity() const;
+  gtsam::Vector3 velocity() const;
+  gtsam::Vector3 bodyVelocity() const;
   gtsam::Pose3 pose() const;
+
+  // Standard Interface
+  double range(const gtsam::Point3& point) const;
+  double range(const gtsam::Point3& point, Eigen::Ref<Eigen::MatrixXd> Hself,
+               Eigen::Ref<Eigen::MatrixXd> Hpoint) const;
+  gtsam::Unit3 bearing(const gtsam::Point3& point) const;
+  gtsam::Unit3 bearing(const gtsam::Point3& point, Eigen::Ref<Eigen::MatrixXd> Hself,
+                       Eigen::Ref<Eigen::MatrixXd> Hpoint) const;
+
+  // Group
+  static gtsam::NavState Identity();
+  gtsam::NavState inverse();
+  gtsam::NavState compose(const gtsam::NavState& p2) const;
+  gtsam::NavState between(const gtsam::NavState& p2) const;
+
+  // Operator Overloads
+  gtsam::NavState operator*(const gtsam::NavState& p2) const;
 
   // Manifold
   gtsam::NavState retract(const gtsam::Vector& v) const;
@@ -71,8 +90,16 @@ class NavState {
   gtsam::NavState expmap(gtsam::Vector v, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
   gtsam::Vector logmap(const gtsam::NavState& p);
   gtsam::Vector logmap(const gtsam::NavState& p, Eigen::Ref<Eigen::MatrixXd> H1, Eigen::Ref<Eigen::MatrixXd> H2);
+
+  // Matrix Lie Group
   gtsam::Matrix AdjointMap() const;
   gtsam::Vector Adjoint(gtsam::Vector xi_b) const;
+  gtsam::Vector AdjointTranspose(gtsam::Vector x) const;
+  static gtsam::Matrix adjointMap(gtsam::Vector xi);
+  static gtsam::Vector adjoint(gtsam::Vector xi, gtsam::Vector y);
+  static gtsam::Vector adjointTranspose(gtsam::Vector xi, gtsam::Vector y);
+  gtsam::Vector vec() const;
+  gtsam::Matrix matrix() const;
   static gtsam::Matrix Hat(const gtsam::Vector& xi);
   static gtsam::Vector Vee(const gtsam::Matrix& X);
 
@@ -477,6 +504,50 @@ virtual class GPSFactor2ArmCalib : gtsam::NonlinearFactor{
   void serialize() const;
 };
 
+#include <gtsam/navigation/PseudorangeFactor.h>
+virtual class PseudorangeFactor : gtsam::NonlinearFactor {
+  PseudorangeFactor(gtsam::Key receiverPositionKey,
+                    gtsam::Key receiverClockBiasKey, double measuredPseudorange,
+                    const gtsam::Point3& satellitePosition,
+                    double satelliteClockBias,
+                    const gtsam::noiseModel::Base* model);
+
+  // Testable
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  // Standard Interface
+  gtsam::Vector evaluateError(const gtsam::Point3& receiverPosition,
+                              const double& receiverClockBias) const;
+
+  // enable serialization functionality
+  void serialize() const;
+};
+
+virtual class DifferentialPseudorangeFactor : gtsam::NonlinearFactor {
+  DifferentialPseudorangeFactor(gtsam::Key receiverPositionKey,
+                                gtsam::Key receiverClockBiasKey,
+                                gtsam::Key differentialCorrectionKey,
+                                double measuredPseudorange,
+                                const gtsam::Point3& satellitePosition,
+                                double satelliteClockBias,
+                                const gtsam::noiseModel::Base* model);
+
+  // Testable
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  // Standard Interface
+  gtsam::Vector evaluateError(const gtsam::Point3& receiverPosition,
+                              const double& receiverClockBias,
+                              const double& differentialCorrection) const;
+
+  // enable serialization functionality
+  void serialize() const;
+};
+
 #include <gtsam/navigation/BarometricFactor.h>
 virtual class BarometricFactor : gtsam::NonlinearFactor {
   BarometricFactor();
@@ -543,6 +614,7 @@ virtual class Scenario {
   gtsam::Vector acceleration_n(double t) const;
   gtsam::Rot3 rotation(double t) const;
   gtsam::NavState navState(double t) const;
+  gtsam::Gal3 gal3(double t) const;
   gtsam::Vector velocity_b(double t) const;
   gtsam::Vector acceleration_b(double t) const;
 };
@@ -611,7 +683,7 @@ virtual class ManifoldEKF {
 
   // Only vector-based measurements are supported in wrapper
   void updateWithVector(const gtsam::Vector& prediction, const gtsam::Matrix& H,
-                        const gtsam::Vector& z, const gtsam::Matrix& R);
+                        const gtsam::Vector& z, const gtsam::Matrix& R, bool performReset = true);
 };
 
 #include <gtsam/navigation/LieGroupEKF.h>
@@ -642,6 +714,27 @@ virtual class InvariantEKF : gtsam::LeftLinearEKF<G> {
   void predict(const G& W, const G& U, const gtsam::Matrix& Q);
   void predict(const gtsam::Vector& u, double dt, gtsam::Matrix Q);
 };
+
+// ---------------------------------------------------------------------------
+// ABC Equivariant Filter
+#include <gtsam_unstable/geometry/ABCEquivariantFilter.h>
+namespace abc {
+template <N = {1, 2, 3}>
+class AbcEquivariantFilter {
+  // Constructors
+  AbcEquivariantFilter();
+  AbcEquivariantFilter(gtsam::Matrix Sigma0);
+
+  // Predict and update methods
+  void predict(const gtsam::Vector3& omega, const gtsam::Matrix6& inputCovariance, double dt);
+  void update(const gtsam::Unit3& y, const gtsam::Unit3& d, const gtsam::Matrix3& R, int cal_idx);
+
+  // Accessors
+  gtsam::Rot3 attitude() const;
+  gtsam::Vector3 bias() const;
+  gtsam::Rot3 calibration(size_t i) const;
+};
+}  // namespace abc
 
 // Specialized NavState IMU EKF
 #include <gtsam/navigation/NavStateImuEKF.h>

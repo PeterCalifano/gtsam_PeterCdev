@@ -17,9 +17,8 @@ function configure()
 
   # GTSAM_BUILD_WITH_MARCH_NATIVE=OFF: to avoid crashes in builder VMs
   # CMAKE_CXX_FLAGS="-w": Suppress warnings to avoid IO latency in CI logs
-  export CMAKE_GENERATOR=Ninja
   cmake $GITHUB_WORKSPACE \
-      -B build \
+      -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Debug} \
       -DCMAKE_CXX_FLAGS="-w" \
       -DGTSAM_BUILD_TESTS=${GTSAM_BUILD_TESTS:-OFF} \

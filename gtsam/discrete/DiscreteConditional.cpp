@@ -87,7 +87,7 @@ DiscreteConditional DiscreteConditional::operator*(
   }
 
   // Take union of frontal keys
-  std::set<Key> newFrontals;
+  KeySet newFrontals;
   for (auto&& key : this->frontals()) newFrontals.insert(key);
   for (auto&& key : other.frontals()) newFrontals.insert(key);
 
