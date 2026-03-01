@@ -8,7 +8,7 @@ IFS=$'\n\t' # Narrows word splitting to newlines and tabs (safe with spaces)
 
 # --- Defaults ---
 buildpath="build"
-install_path="install"
+install_path="/usr/local"
 
 jobs="${JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
 jobs=$(( jobs < 6 ? jobs : 6 ))
@@ -16,12 +16,13 @@ jobs=$(( jobs < 6 ? jobs : 6 ))
 rebuild_only=false
 build_type="relwithdebinfo"   # debug|release|relwithdebinfo|minsizerel
 run_tests=true
-CXX_FLAGS=""
+CXX_FLAGS="-march=native"
 python_wrap=false
 matlab_wrap=false
 unstable_build=false
 use_expmap=true
 use_tangent_preintegr=true
+use_tbb=true
 install=false
 use_ninja=false
 no_optim=false
@@ -36,13 +37,14 @@ Usage: build_gtsam.sh [OPTIONS]
 
 Options:
   -B, --buildpath <dir>         Build directory (default: ./build)
-      --install-path <dir>      Install prefix (default: ./install)
+      --install-path <dir>      Install prefix (default: /usr/local)
   -j, --jobs <N>                Parallel build jobs (default: $(nproc or 4))
   -r, --rebuild-only            Skip CMake configure; build existing tree only
   -t, --type|--type-build <t>   Build type: debug|release|relwithdebinfo|minsizerel
   -c, --checks                  Run tests (on by default). Alias of --run-tests
       --skip-tests              Do not run tests
-  -f, --flagsCXX <flags>        Extra C/C++ flags (quoted). Adds warnings for
+  -f, --flagsCXX <flags>        Extra C/C++ flags (quoted). Appended to
+                                default "-march=native", plus warnings for
                                 Debug/RelWithDebInfo/Release
   -D, --define <var[=val]>      Extra CMake cache definitions (repeatable)
   -p, --python-wrap             Build Python wrapper
@@ -104,7 +106,7 @@ while true; do
     -t|--type|--type-build) build_type="$2"; shift 2 ;;
     -c|--checks)        run_tests=true;  shift ;;
         --skip-tests|--no-checks) run_tests=false; shift ;;
-    -f|--flagsCXX)      CXX_FLAGS="$2"; shift 2 ;;
+    -f|--flagsCXX)      CXX_FLAGS="${CXX_FLAGS:+$CXX_FLAGS }$2"; shift 2 ;;
     -D|--define)        cmake_defines+=( "-D$2" ); shift 2 ;;
     -p|--python-wrap)   python_wrap=true; shift ;;
     -m|--matlab-wrap)   matlab_wrap=true; shift ;;
@@ -172,6 +174,7 @@ info "MATLAB wrapper     : $matlab_wrap"
 info "Unstable build     : $unstable_build"
 info "Use Expmap         : $use_expmap"
 info "Tangent preintegr  : $use_tangent_preintegr"
+info "Use TBB            : $use_tbb"
 info "Generator          : $([[ "$use_ninja" == true ]] && echo Ninja || echo 'Unix Makefiles')"
 info "Toolchain file     : ${toolchain_file:-<none>}"
 info "Run tests          : $run_tests"
@@ -196,7 +199,7 @@ if [[ "$rebuild_only" == false ]]; then
     "-DGTSAM_BUILD_UNSTABLE=$(bool_to_cmake "$unstable_build")"
     "-DGTSAM_BUILD_PYTHON=$(bool_to_cmake "$python_wrap")"
     "-DGTSAM_INSTALL_MATLAB_TOOLBOX=$(bool_to_cmake "$matlab_wrap")"
-    -DGTSAM_WITH_TBB=ON
+    "-DGTSAM_WITH_TBB=$(bool_to_cmake "$use_tbb")"
     -DGTSAM_WITH_EIGEN_MKL=OFF
     "-DGTSAM_UNSTABLE_BUILD_PYTHON=$(bool_to_cmake "$python_wrap")"
     "-DGTSAM_TANGENT_PREINTEGRATION=$(bool_to_cmake "$use_tangent_preintegr")"
