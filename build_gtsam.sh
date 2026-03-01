@@ -16,13 +16,14 @@ jobs=$(( jobs < 6 ? jobs : 6 ))
 rebuild_only=false
 build_type="relwithdebinfo"   # debug|release|relwithdebinfo|minsizerel
 run_tests=true
-CXX_FLAGS="-march=native"
+CXX_FLAGS="-Wno-error=array-bounds"
 python_wrap=false
 matlab_wrap=false
 unstable_build=false
 use_expmap=true
 use_tangent_preintegr=true
 use_tbb=true
+use_march_native=true
 install=false
 use_ninja=false
 no_optim=false
@@ -44,8 +45,8 @@ Options:
   -c, --checks                  Run tests (on by default). Alias of --run-tests
       --skip-tests              Do not run tests
   -f, --flagsCXX <flags>        Extra C/C++ flags (quoted). Appended to
-                                default "-march=native", plus warnings for
-                                Debug/RelWithDebInfo/Release
+                                default "-Wno-error=array-bounds", plus
+                                warnings for Debug/RelWithDebInfo/Release
   -D, --define <var[=val]>      Extra CMake cache definitions (repeatable)
   -p, --python-wrap             Build Python wrapper
   -m, --matlab-wrap             Build MATLAB wrapper
@@ -165,6 +166,10 @@ info "Install prefix     : $install_path"
 info "Jobs               : $jobs"
 info "Build Type         : $cmake_bt"
 info "Extra CXX flags    : ${CXX_FLAGS:-<none>}"
+if [[ "$CXX_FLAGS" == *"-Wno-error=array-bounds"* ]]; then
+  info "Notice             : -Warray-bounds is downgraded to warning (Eigen/AVX false-positive guard)."
+fi
+info "Use -march=native  : $use_march_native (via GTSAM_BUILD_WITH_MARCH_NATIVE)"
 info "Extra CMake defines: ${cmake_defines[*]:-<none>}"
 info "Python wrapper     : $python_wrap"
 if [[ "$python_wrap" == true ]]; then
@@ -205,6 +210,7 @@ if [[ "$rebuild_only" == false ]]; then
     "-DGTSAM_TANGENT_PREINTEGRATION=$(bool_to_cmake "$use_tangent_preintegr")"
     "-DGTSAM_POSE3_EXPMAP=$(bool_to_cmake "$use_expmap")"
     "-DGTSAM_ROT3_EXPMAP=$(bool_to_cmake "$use_expmap")"
+    "-DGTSAM_BUILD_WITH_MARCH_NATIVE=$(bool_to_cmake "$use_march_native")"
     "-DCMAKE_INSTALL_PREFIX=$install_path"
   )
   [[ "$use_ninja"  == true ]] && cmake_args+=( -G Ninja )
