@@ -110,7 +110,7 @@ while true; do
     -f|--flagsCXX)      CXX_FLAGS="${CXX_FLAGS:+$CXX_FLAGS }$2"; shift 2 ;;
     -D|--define)        cmake_defines+=( "-D$2" ); shift 2 ;;
     -p|--python-wrap)   python_wrap=true; shift ;;
-    -m|--matlab-wrap)   matlab_wrap=true; shift ;;
+    -m|--matlab-wrap)   matlab_wrap=true; use_tbb=false; shift ;;
     -u|--unstable-build|--unstable_build) unstable_build=true; shift ;;
     -e|--exp-map-disabled|--exp_map_disabled) use_expmap=false; shift ;;
     -o|--on-manifold-preintegr|--on_manifold_preintegr) use_tangent_preintegr=false; shift ;;
