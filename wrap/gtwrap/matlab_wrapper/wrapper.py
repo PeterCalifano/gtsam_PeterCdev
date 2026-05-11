@@ -54,7 +54,15 @@ class MatlabWrapper(CheckMixin, FormatMixin):
             'int': 'numeric',
             'size_t': 'numeric',
             'Key': 'numeric',
-            'bool': 'logical'
+            'bool': 'logical',
+            'int8_t': 'int8',
+            'uint8_t': 'uint8',
+            'int16_t': 'int16',
+            'uint16_t': 'uint16',
+            'int32_t': 'int32',
+            'uint32_t': 'uint32',
+            'int64_t': 'int64',
+            'uint64_t': 'uint64',
         }
         # Map the data type into the type used in Matlab methods.
         # Found in matlab.h in old wrapper
@@ -70,7 +78,15 @@ class MatlabWrapper(CheckMixin, FormatMixin):
             'Vector': 'double',
             'Matrix': 'double',
             'Key': 'numeric',
-            'bool': 'bool'
+            'bool': 'bool',
+            'int8_t': 'int8',
+            'uint8_t': 'uint8',
+            'int16_t': 'int16',
+            'uint16_t': 'uint16',
+            'int32_t': 'int32',
+            'uint32_t': 'uint32',
+            'int64_t': 'int64',
+            'uint64_t': 'uint64',
         }
         # The amount of times the wrapper has created a call to geometry_wrapper
         self.wrapper_id = 0

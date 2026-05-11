@@ -8,6 +8,16 @@ import gtwrap.template_instantiator as instantiator
 
 class CheckMixin:
     """Mixin to provide various checks."""
+    fixed_width_integer_types: Tuple = (
+        "int8_t",
+        "uint8_t",
+        "int16_t",
+        "uint16_t",
+        "int32_t",
+        "uint32_t",
+        "int64_t",
+        "uint64_t",
+    )
     # Data types that are primitive types
     not_ptr_type: Tuple = (
         "int",
@@ -16,8 +26,9 @@ class CheckMixin:
         "char",
         "unsigned char",
         "size_t",
+        "string",
         "Key",  # This is an alias for a uint64_t
-    )
+    ) + fixed_width_integer_types
     # Ignore the namespace for these datatypes
     ignore_namespace: Tuple = ('Matrix', 'Vector', 'Point2', 'Point3')
     # Methods that should be ignored
