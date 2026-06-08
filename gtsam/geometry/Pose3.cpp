@@ -95,8 +95,6 @@ Pose3 Pose3::interpolateRt(const Pose3& T, double t,
 /* ************************************************************************* */
 // Expmap is implemented in so3::ExpmapFunctor::expmap, based on Ethan Eade's
 // elegant Lie group document, at https://www.ethaneade.org/lie.pdf.
-// Note by PeterC: OptionalJacobian has operator bool() overloaded --> call (Hxi) check if object is not equal to nullptr
-// See header: OptionalJacobian.h
 // See also [this document](doc/Jacobians.md)
 Pose3 Pose3::Expmap(const Vector6& xi, OptionalJacobian<6, 6> Hxi) {
   // Get angular velocity omega and translational velocity v from twist xi
@@ -113,6 +111,14 @@ Pose3 Pose3::Expmap(const Vector6& xi, OptionalJacobian<6, 6> Hxi) {
 #endif
 
   // The translation t = local.Jacobian().left() * v.
+  // Here we call local.Jacobian().applyLeft, which is faster if you don't need
+  // Jacobians, and returns Jacobian of t with respect to w if asked.
+  // NOTE(Frank): this does the same as the intuitive formulas:
+  //   t_parallel = w * w.dot(v);  // translation parallel to axis
+  //   w_cross_v = w.cross(v);     // translation orthogonal to axis
+  //   t = (w_cross_v - Rot3::Expmap(w) * w_cross_v + t_parallel) / theta2;
+  // but Local does not need R, deals automatically with the case where theta2
+  // is near zero, and also gives us the machinery for the Jacobians.
   Matrix3 H;
   const Vector3 t = local.Jacobian().applyLeft(v, Hxi ? &H : nullptr);
 
@@ -198,7 +204,7 @@ Point3 Pose3::transformFrom(const Point3& point, OptionalJacobian<3, 6> Hself,
   return R_ * point + t_;
 }
 
-Matrix Pose3::transformFrom(const Matrix& points) const {
+Matrix Pose3::transformFrom(ConstMatrixView points) const {
   if (points.rows() != 3) {
     throw std::invalid_argument("Pose3:transformFrom expects 3*N matrix.");
   }
@@ -226,7 +232,7 @@ Point3 Pose3::transformTo(const Point3& point, OptionalJacobian<3, 6> Hself,
   return q;
 }
 
-Matrix Pose3::transformTo(const Matrix& points) const {
+Matrix Pose3::transformTo(ConstMatrixView points) const {
   if (points.rows() != 3) {
     throw std::invalid_argument("Pose3:transformTo expects 3*N matrix.");
   }
@@ -335,7 +341,7 @@ std::optional<Pose3> Pose3::Align(const Point3Pairs &abPointPairs) {
   return Pose3(aRb, aTb);
 }
 
-std::optional<Pose3> Pose3::Align(const Matrix& a, const Matrix& b) {
+std::optional<Pose3> Pose3::Align(ConstMatrixView a, ConstMatrixView b) {
   if (a.rows() != 3 || b.rows() != 3 || a.cols() != b.cols()) {
     throw std::invalid_argument(
         "Pose3:Align expects 3*N matrices of equal shape.");

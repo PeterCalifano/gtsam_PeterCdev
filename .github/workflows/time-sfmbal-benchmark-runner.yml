@@ -28,6 +28,10 @@ on:
         description: Commit SHA used in cache key
         required: true
         type: string
+      orchestrator_run_id:
+        description: Orchestrator run ID for cache-busting
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -38,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
@@ -100,14 +104,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=ON)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}
 
       # ── TBB=OFF ──
       - name: Clean build directory
@@ -138,21 +142,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=OFF)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}
 
   benchmark_linux_arm64:
     if: inputs.runner_id == 'linux-arm64'
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout target ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
@@ -214,14 +218,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=ON)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}
 
       # ── TBB=OFF ──
       - name: Clean build directory
@@ -252,21 +256,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=OFF)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}
 
   benchmark_macos_arm64:
     if: inputs.runner_id == 'macos-arm64'
     runs-on: macos-15
     steps:
       - name: Checkout target ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
@@ -326,14 +330,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbON.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=ON)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbON-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}
 
       # ── TBB=OFF ──
       - name: Clean build directory
@@ -364,11 +368,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-cache
-          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json"
+          cp benchmark-results-tbbOFF.json "benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json"
 
       - name: Save benchmark cache (TBB=OFF)
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
-          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}
+          path: benchmark-cache/${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ inputs.os_name }}-${{ inputs.arch }}-tbbOFF-${{ inputs.target_sha }}-${{ inputs.orchestrator_run_id }}

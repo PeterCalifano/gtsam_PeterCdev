@@ -127,6 +127,7 @@ protected:
   const NonlinearOptimizerParams& _params() const override {
     return params_;
   }
+
 };
 
 }

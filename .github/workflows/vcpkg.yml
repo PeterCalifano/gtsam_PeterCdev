@@ -1,5 +1,6 @@
 name: vcpkg
 on:
+  workflow_dispatch: 
   pull_request:
   push:
     # Runs on pushes targeting the develop branch
@@ -41,7 +42,7 @@ jobs:
             python: python3
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup MSVC
         if: runner.os == 'Windows'

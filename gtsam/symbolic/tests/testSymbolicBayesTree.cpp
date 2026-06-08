@@ -368,6 +368,39 @@ TEST(BayesTree, removeTop5) {
 }
 
 /* ************************************************************************* */
+TEST(BayesTree, collectAffectedKeys1) {
+  SymbolicBayesTree bayesTree = asiaBayesTree;
+
+  // Traverse Top
+  KeySet result = bayesTree.collectAffectedKeys(Keys(_T_));
+
+  // Remove top to get expected result
+  SymbolicBayesNet bn;
+  SymbolicBayesTree::Cliques orphans;
+  bayesTree.removeTop(Keys(_T_), &bn, &orphans);
+
+  CHECK(assert_container_equality(result, bn.keys()));
+}
+
+/* ************************************************************************* */
+TEST(BayesTree, collectAffectedKeys2) {
+  auto graph = SymbolicFactorGraph(SymbolicFactor(L(5)))(SymbolicFactor(
+      X(4), L(5)))(SymbolicFactor(X(2), X(4)))(SymbolicFactor(X(3), X(2)));
+  Ordering ordering{X(3), X(2), X(4), L(5)};
+  SymbolicBayesTree bayesTree = *graph.eliminateMultifrontal(ordering);
+
+  // Traverse Top
+  KeySet result = bayesTree.collectAffectedKeys(Keys(X(2))(L(5))(X(4))(X(3)));
+
+  // remove all
+  SymbolicBayesNet bn;
+  SymbolicBayesTree::Cliques orphans;
+  bayesTree.removeTop(Keys(X(2))(L(5))(X(4))(X(3)), &bn, &orphans);
+
+  CHECK(assert_container_equality(result, bn.keys()));
+}
+
+/* ************************************************************************* */
 TEST(SymbolicBayesTree, thinTree) {
   // create a thin-tree Bayes net, a la Jean-Guillaume
   SymbolicBayesNet bayesNet;

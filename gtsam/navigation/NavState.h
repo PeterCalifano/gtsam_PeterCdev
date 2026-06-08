@@ -154,7 +154,9 @@ public:
   /// @{
 
   /// Syntactic sugar
-  const Rot3& rotation() const { return attitude(); };
+  const Rot3& rotation(OptionalJacobian<3, 9> H = {}) const {
+    return attitude(H);
+  };
 
   // Tangent space sugar.
   // TODO(frank): move to private navstate namespace in cpp

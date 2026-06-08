@@ -45,6 +45,16 @@ ExtendedPose3<K, Derived>::ExtendedPose3(const Rot3& R, const Matrix3K& x)
     : R_(R), t_(x) {}
 
 template <int K, class Derived>
+template <int FixedK, typename, typename... Vecs, typename>
+ExtendedPose3<K, Derived>::ExtendedPose3(const Rot3& R, const Vecs&... xs)
+    : R_(R), t_(Matrix3K::Zero()) {
+  const Point3 columns[] = {Point3(xs)...};
+  for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(FixedK); ++i) {
+    t_.col(i) = columns[i];
+  }
+}
+
+template <int K, class Derived>
 ExtendedPose3<K, Derived>::ExtendedPose3(const MatrixRep& T) {
   const Eigen::Index n = T.rows();
   if constexpr (K == Eigen::Dynamic) {
@@ -127,7 +137,8 @@ typename ExtendedPose3<K, Derived>::This ExtendedPose3<K, Derived>::operator*(
   const ExtendedPose3& otherBase = AsBase(other);
   if constexpr (K == Eigen::Dynamic) {
     if (k() != otherBase.k()) {
-      throw std::invalid_argument("ExtendedPose3: compose requires matching k.");
+      throw std::invalid_argument(
+          "ExtendedPose3: compose requires matching k.");
     }
   }
   Matrix3K x = t_ + R_.matrix() * otherBase.t_;

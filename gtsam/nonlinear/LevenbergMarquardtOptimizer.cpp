@@ -81,7 +81,7 @@ int LevenbergMarquardtOptimizer::getInnerIterations() const {
 
 /* ************************************************************************* */
 GaussianFactorGraph::shared_ptr LevenbergMarquardtOptimizer::linearize() const {
-  return graph_.linearize(state_->values);
+  return graph().linearize(state_->values);
 }
 
 /* ************************************************************************* */
@@ -203,7 +203,7 @@ bool LevenbergMarquardtOptimizer::tryLambda(const GaussianFactorGraph& linear,
       gttic(compute_error);
       if (verbose)
         cout << "calculating error:" << endl;
-      newError = graph_.error(newValues);
+      newError = graph().error(newValues);
       gttoc(compute_error);
 
       if (verbose)

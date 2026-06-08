@@ -34,6 +34,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <memory>
 
 using namespace std;
 using namespace gtsam;
@@ -42,6 +43,32 @@ const double tol = 1e-5;
 
 using symbol_shorthand::X;
 using symbol_shorthand::L;
+
+class CountingNonlinearFactorGraph : public NonlinearFactorGraph {
+ public:
+  std::shared_ptr<size_t> errorCount = std::make_shared<size_t>(0);
+  std::shared_ptr<size_t> linearizeCount = std::make_shared<size_t>(0);
+
+  CountingNonlinearFactorGraph() = default;
+
+  explicit CountingNonlinearFactorGraph(const NonlinearFactorGraph& graph)
+      : NonlinearFactorGraph(graph) {}
+
+  std::shared_ptr<const NonlinearFactorGraph> cloneShared() const override {
+    return std::make_shared<CountingNonlinearFactorGraph>(*this);
+  }
+
+  double error(const Values& values) const override {
+    ++(*errorCount);
+    return NonlinearFactorGraph::error(values);
+  }
+
+  GaussianFactorGraph::shared_ptr linearize(
+      const Values& linearizationPoint) const override {
+    ++(*linearizeCount);
+    return NonlinearFactorGraph::linearize(linearizationPoint);
+  }
+};
 
 /* ************************************************************************* */
 TEST( NonlinearOptimizer, paramsEquals )
@@ -658,7 +685,7 @@ struct traits<MyType> {
     return (a - b).array().abs().maxCoeff() < tol;
   }
   static void Print(const MyType&, const string&) {}
-  static int GetDimension(const MyType&) { return dimension; }
+  static size_t GetDimension(const MyType&) { return dimension; }
   static MyType Retract(const MyType& a, const TangentVector& v,
                         ChartJacobian H1 = {}, ChartJacobian H2 = {}) {
     if (H1) *H1 = Matrix3::Identity();
@@ -684,6 +711,35 @@ TEST(NonlinearOptimizer, Traits) {
   LevenbergMarquardtOptimizer optimizer(fg, init);
   Values actual = optimizer.optimize();
   EXPECT(assert_equal(init, actual));
+}
+
+/* ************************************************************************* */
+TEST(NonlinearOptimizer, DerivedGraphVirtualDispatch) {
+  CountingNonlinearFactorGraph fg(example::createReallyNonlinearFactorGraph());
+  const NonlinearFactorGraph& graph = fg;
+
+  Values initial;
+  initial.insert(X(1), Point2(3, 3));
+
+  {
+    GaussNewtonOptimizer optimizer(graph, initial);
+    optimizer.iterate();
+  }
+  {
+    LevenbergMarquardtOptimizer optimizer(graph, initial);
+    optimizer.iterate();
+  }
+  {
+    DoglegOptimizer optimizer(graph, initial);
+    optimizer.iterate();
+  }
+  {
+    NonlinearConjugateGradientOptimizer optimizer(graph, initial);
+    optimizer.iterate();
+  }
+
+  CHECK(*fg.errorCount >= 4);
+  CHECK(*fg.linearizeCount >= 4);
 }
 
 /* ************************************************************************* */

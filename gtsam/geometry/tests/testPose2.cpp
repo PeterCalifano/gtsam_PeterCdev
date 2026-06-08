@@ -517,7 +517,7 @@ TEST( Pose2, translation )  {
   Matrix actualH;
   EXPECT(assert_equal((Vector2() << 3.5, -8.2).finished(), pose.translation(actualH), 1e-8));
 
-  std::function<Point2(const Pose2&)> f = [](const Pose2& T) { return T.translation(); };
+  auto f = [](const Pose2& T) { return T.translation(); };
   Matrix numericalH = numericalDerivative11<Point2, Pose2>(f, pose);
   EXPECT(assert_equal(numericalH, actualH, 1e-6));
 }
@@ -529,7 +529,7 @@ TEST( Pose2, rotation ) {
   Matrix actualH(4, 3);
   EXPECT(assert_equal(Rot2(4.2), pose.rotation(actualH), 1e-8));
 
-  std::function<Rot2(const Pose2&)> f = [](const Pose2& T) { return T.rotation(); };
+  auto f = [](const Pose2& T) { return T.rotation(); };
   Matrix numericalH = numericalDerivative11<Rot2, Pose2>(f, pose);
   EXPECT(assert_equal(numericalH, actualH, 1e-6));
 }
@@ -984,7 +984,7 @@ TEST(Pose2, Vec) {
   EXPECT(assert_equal(expected_vec, actual_vec));
 
   // Verify Jacobian with numerical derivatives
-  std::function<Vector9(const Pose2&)> f = [](const Pose2& p) { return p.vec(); };
+  auto f = [](const Pose2& p) { return p.vec(); };
   Matrix93 numericalH = numericalDerivative11<Vector9, Pose2>(f, pose);
   EXPECT(assert_equal(numericalH, actualH, 1e-9));
 }
@@ -1014,8 +1014,7 @@ TEST(Pose2, AdjointTranspose) {
                       Vector(pose.AdjointTranspose(xi))));
 
   Matrix33 actualH1, actualH2;
-  std::function<Vector3(const Pose2&, const Vector3&)> proxy =
-      [](const Pose2& g, const Vector3& x) {
+  auto proxy = [](const Pose2& g, const Vector3& x) {
         return Vector3(g.AdjointTranspose(x));
       };
   pose.AdjointTranspose(xi, actualH1, actualH2);
@@ -1030,8 +1029,7 @@ TEST(Pose2, adjointTranspose) {
 
   Matrix33 Hxi, Hy;
   const Vector3 actual = Pose2::adjointTranspose(xi, y, Hxi, Hy);
-  std::function<Vector3(const Vector3&, const Vector3&)> f =
-      [](const Vector3& x, const Vector3& v) {
+  auto f = [](const Vector3& x, const Vector3& v) {
         return Pose2::adjointTranspose(x, v);
       };
   EXPECT(assert_equal(f(xi, y), actual));

@@ -3,6 +3,11 @@ name: timeSFMBAL Benchmark
 on:
   pull_request:
     types: [opened]
+    paths-ignore:
+      - 'python/**'
+      - '**.md'
+      - '**.ipynb'
+      - 'myst.yml'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -118,34 +123,8 @@ jobs:
               });
             }
 
-            // Helper: check whether an exact cache key exists.
-            const cacheExists = async (key) => {
-              const resp = await github.rest.actions.getActionsCacheList({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                key,
-              });
-              return resp.data.actions_caches.some((c) => c.key === key);
-            };
-
-            // Check cache and dispatch only uncached benchmark worker runs.
-            // Each worker produces both TBB=ON and TBB=OFF results, so we
-            // skip dispatch only when both cache entries are present.
+            // Dispatch all benchmark worker runs.
             for (const spec of specs) {
-              const keyON = `timeSFMBAL-benchmark-v4-${spec.os_name}-${spec.arch}-tbbON-${spec.sha}`;
-              const keyOFF = `timeSFMBAL-benchmark-v4-${spec.os_name}-${spec.arch}-tbbOFF-${spec.sha}`;
-              const [hitON, hitOFF] = await Promise.all([
-                cacheExists(keyON),
-                cacheExists(keyOFF),
-              ]);
-              if (hitON && hitOFF) {
-                core.info(
-                  `Cache hit for ${spec.role} ${spec.id} (both TBB variants), skipping dispatch.`
-                );
-                spec.conclusion = "skipped_cached";
-                continue;
-              }
-
               spec.group_token = `${groupId}-${spec.role}-${spec.id}`;
               await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
@@ -159,6 +138,7 @@ jobs:
                   arch: spec.arch,
                   checkout_ref: spec.checkout_ref,
                   target_sha: spec.sha,
+                  orchestrator_run_id: String(context.runId),
                 },
               });
             }
@@ -282,15 +262,15 @@ jobs:
         id: restore_head
         uses: actions/cache/restore@v4
         with:
-          path: benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}
+          path: benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}-${{ github.run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}-${{ github.run_id }}
 
       - name: Restore base benchmark cache
         id: restore_base
         uses: actions/cache/restore@v4
         with:
-          path: benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}.json
-          key: timeSFMBAL-benchmark-v4-${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}
+          path: benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}-${{ github.run_id }}.json
+          key: timeSFMBAL-benchmark-v4-${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}-${{ github.run_id }}
 
       - name: Stage collected files
         shell: bash
@@ -299,13 +279,13 @@ jobs:
           mkdir -p artifact
           echo "head cache-hit: ${{ steps.restore_head.outputs.cache-hit }}"
           echo "base cache-hit: ${{ steps.restore_base.outputs.cache-hit }}"
-          if [[ "${{ steps.restore_head.outputs.cache-hit }}" == "true" ]] && [[ -f "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}.json" ]]; then
-            cp "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}.json" "artifact/head-${{ matrix.id }}.json"
+          if [[ "${{ steps.restore_head.outputs.cache-hit }}" == "true" ]] && [[ -f "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}-${{ github.run_id }}.json" ]]; then
+            cp "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.head_sha }}-${{ github.run_id }}.json" "artifact/head-${{ matrix.id }}.json"
           else
             : > "artifact/head-miss-${{ matrix.id }}.txt"
           fi
-          if [[ "${{ steps.restore_base.outputs.cache-hit }}" == "true" ]] && [[ -f "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}.json" ]]; then
-            cp "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}.json" "artifact/base-${{ matrix.id }}.json"
+          if [[ "${{ steps.restore_base.outputs.cache-hit }}" == "true" ]] && [[ -f "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}-${{ github.run_id }}.json" ]]; then
+            cp "benchmark-cache/${{ matrix.os_name }}-${{ matrix.arch }}-tbb${{ matrix.tbb }}-${{ needs.context.outputs.base_sha }}-${{ github.run_id }}.json" "artifact/base-${{ matrix.id }}.json"
           else
             : > "artifact/base-miss-${{ matrix.id }}.txt"
           fi
@@ -323,7 +303,7 @@ jobs:
     if: always()
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download collected artifacts
         uses: actions/download-artifact@v4
@@ -379,39 +359,18 @@ jobs:
           PY
           cat benchmark-comment.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Post or update PR comment
+      - name: Post PR comment
         if: needs.context.outputs.should_comment == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require("fs");
-            const marker = "<!-- time-sfmbal-benchmark -->";
             const body = fs.readFileSync("benchmark-comment.md", "utf8");
             const issue_number = Number("${{ needs.context.outputs.pr_number }}");
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number,
-              per_page: 100,
+              body,
             });
-
-            const existing = comments.find(
-              (comment) => comment.user?.type === "Bot" && comment.body?.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number,
-                body,
-              });
-            }

@@ -365,35 +365,21 @@ virtual class AHRSFactor : gtsam::NonlinearFactor {
 };
 
 #include <gtsam/navigation/AttitudeFactor.h>
-virtual class Rot3AttitudeFactor : gtsam::NoiseModelFactor {
-  Rot3AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef, const gtsam::noiseModel::Diagonal* model,
-      const gtsam::Unit3& bMeasured);
-  Rot3AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef, const gtsam::noiseModel::Diagonal* model);
-  Rot3AttitudeFactor();
+template<VALUE = {gtsam::Rot3, gtsam::Pose3, gtsam::NavState, gtsam::Gal3,
+                  gtsam::Se23, gtsam::ExtendedPose3d}>
+virtual class AttitudeFactor : gtsam::NoiseModelFactor {
+  AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef,
+                 const gtsam::noiseModel::Diagonal* model,
+                 const gtsam::Unit3& bMeasured);
+  AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef,
+                 const gtsam::noiseModel::Diagonal* model);
+  AttitudeFactor();
   void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
                                 gtsam::DefaultKeyFormatter) const;
-  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol = 1e-9) const;
   gtsam::Unit3 nRef() const;
   gtsam::Unit3 bMeasured() const;
-  gtsam::Vector evaluateError(const gtsam::Rot3& nRb);
-
-  // enable serialization functionality
-  void serialize() const;
-};
-
-virtual class Pose3AttitudeFactor : gtsam::NoiseModelFactor {
-  Pose3AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef,
-                      const gtsam::noiseModel::Diagonal* model,
-                      const gtsam::Unit3& bMeasured);
-  Pose3AttitudeFactor(gtsam::Key key, const gtsam::Unit3& nRef,
-                      const gtsam::noiseModel::Diagonal* model);
-  Pose3AttitudeFactor();
-  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
-                                gtsam::DefaultKeyFormatter) const;
-  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
-  gtsam::Unit3 nRef() const;
-  gtsam::Unit3 bMeasured() const;
-  gtsam::Vector evaluateError(const gtsam::Pose3& nTb);
+  gtsam::Vector evaluateError(const VALUE& value);
 
   // enable serialization functionality
   void serialize() const;
@@ -534,6 +520,126 @@ virtual class DifferentialPseudorangeFactor : gtsam::NonlinearFactor {
                                 double satelliteClockBias,
                                 const gtsam::noiseModel::Base* model);
 
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  gtsam::Vector evaluateError(const gtsam::Point3& receiverPosition,
+                              const double& receiverClockBias,
+                              const double& differentialCorrection) const;
+
+  void serialize() const;
+};
+
+virtual class PseudorangeFactorArm : gtsam::NonlinearFactor {
+  PseudorangeFactorArm(gtsam::Key poseKey,
+                        gtsam::Key receiverClockBiasKey,
+                        double measuredPseudorange,
+                        const gtsam::Point3& satellitePosition,
+                        const gtsam::Point3& leverArm,
+                        double satelliteClockBias,
+                        const gtsam::noiseModel::Base* model);
+  PseudorangeFactorArm(gtsam::Key poseKey,
+                        gtsam::Key receiverClockBiasKey,
+                        double measuredPseudorange,
+                        const gtsam::Point3& satellitePosition,
+                        const gtsam::Point3& leverArm,
+                        const gtsam::Pose3& ecef_T_nav,
+                        double satelliteClockBias,
+                        const gtsam::noiseModel::Base* model);
+
+  // Testable
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  // Standard Interface
+  gtsam::Vector evaluateError(const gtsam::Pose3& pose,
+                              const double& receiverClockBias) const;
+  const gtsam::Point3& leverArm() const;
+
+  // enable serialization functionality
+  void serialize() const;
+};
+
+virtual class DifferentialPseudorangeFactorArm : gtsam::NonlinearFactor {
+  DifferentialPseudorangeFactorArm(gtsam::Key poseKey,
+                        gtsam::Key receiverClockBiasKey,
+                        gtsam::Key differentialCorrectionKey,
+                        double measuredPseudorange,
+                        const gtsam::Point3& satellitePosition,
+                        const gtsam::Point3& leverArm,
+                        double satelliteClockBias,
+                        const gtsam::noiseModel::Base* model);
+  DifferentialPseudorangeFactorArm(gtsam::Key poseKey,
+                        gtsam::Key receiverClockBiasKey,
+                        gtsam::Key differentialCorrectionKey,
+                        double measuredPseudorange,
+                        const gtsam::Point3& satellitePosition,
+                        const gtsam::Point3& leverArm,
+                        const gtsam::Pose3& ecef_T_nav,
+                        double satelliteClockBias,
+                        const gtsam::noiseModel::Base* model);
+
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  gtsam::Vector evaluateError(const gtsam::Pose3& pose,
+                              const double& receiverClockBias,
+                              const double& differentialCorrection) const;
+  const gtsam::Point3& leverArm() const;
+
+  void serialize() const;
+};
+
+virtual class DoubleDifferencePseudorangeFactor : gtsam::NonlinearFactor {
+  DoubleDifferencePseudorangeFactor(gtsam::Key positionKey,
+                      double prRovRef, double prBaseRef,
+                      double prRovTarget, double prBaseTarget,
+                      const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                      const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                      const gtsam::Point3& basePos,
+                      const gtsam::noiseModel::Base* model);
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
+  gtsam::Vector evaluateError(const gtsam::Point3& pos) const;
+  void serialize() const;
+};
+
+virtual class DoubleDifferencePseudorangeFactorArm : gtsam::NonlinearFactor {
+  DoubleDifferencePseudorangeFactorArm(gtsam::Key poseKey,
+                         double prRovRef, double prBaseRef,
+                         double prRovTarget, double prBaseTarget,
+                         const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                         const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                         const gtsam::Point3& basePos, const gtsam::Point3& leverArm,
+                         const gtsam::noiseModel::Base* model);
+  DoubleDifferencePseudorangeFactorArm(gtsam::Key poseKey,
+                         double prRovRef, double prBaseRef,
+                         double prRovTarget, double prBaseTarget,
+                         const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                         const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                         const gtsam::Point3& basePos, const gtsam::Point3& leverArm,
+                         const gtsam::Pose3& ecef_T_nav,
+                         const gtsam::noiseModel::Base* model);
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
+  gtsam::Vector evaluateError(const gtsam::Pose3& pose) const;
+  const gtsam::Point3& leverArm() const;
+  void serialize() const;
+};
+
+#include <gtsam/navigation/CarrierPhaseFactor.h>
+virtual class CarrierPhaseFactor : gtsam::NonlinearFactor {
+  CarrierPhaseFactor(gtsam::Key receiverPositionKey,
+                      gtsam::Key receiverClockBiasKey,
+                      gtsam::Key ambiguityKey,
+                      double measuredCarrierPhaseMeters,
+                      const gtsam::Point3& satellitePosition,
+                      double satelliteClockBias,
+                      const gtsam::noiseModel::Base* model);
+
   // Testable
   void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
                                 gtsam::DefaultKeyFormatter) const;
@@ -542,9 +648,83 @@ virtual class DifferentialPseudorangeFactor : gtsam::NonlinearFactor {
   // Standard Interface
   gtsam::Vector evaluateError(const gtsam::Point3& receiverPosition,
                               const double& receiverClockBias,
-                              const double& differentialCorrection) const;
+                              const double& ambiguity) const;
 
   // enable serialization functionality
+  void serialize() const;
+};
+
+virtual class CarrierPhaseFactorArm : gtsam::NonlinearFactor {
+  CarrierPhaseFactorArm(gtsam::Key poseKey,
+                         gtsam::Key receiverClockBiasKey,
+                         gtsam::Key ambiguityKey,
+                         double measuredCarrierPhaseMeters,
+                         const gtsam::Point3& satellitePosition,
+                         const gtsam::Point3& leverArm,
+                         double satelliteClockBias,
+                         const gtsam::noiseModel::Base* model);
+  CarrierPhaseFactorArm(gtsam::Key poseKey,
+                         gtsam::Key receiverClockBiasKey,
+                         gtsam::Key ambiguityKey,
+                         double measuredCarrierPhaseMeters,
+                         const gtsam::Point3& satellitePosition,
+                         const gtsam::Point3& leverArm,
+                         const gtsam::Pose3& ecef_T_nav,
+                         double satelliteClockBias,
+                         const gtsam::noiseModel::Base* model);
+
+  // Testable
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter =
+                                gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol);
+
+  // Standard Interface
+  gtsam::Vector evaluateError(const gtsam::Pose3& pose,
+                              const double& receiverClockBias,
+                              const double& ambiguity) const;
+  const gtsam::Point3& leverArm() const;
+
+  // enable serialization functionality
+  void serialize() const;
+};
+
+
+virtual class DoubleDifferenceCarrierPhaseFactor : gtsam::NonlinearFactor {
+  DoubleDifferenceCarrierPhaseFactor(gtsam::Key positionKey, gtsam::Key ambRefKey,
+                       gtsam::Key ambTargetKey,
+                       double cpRovRefMeters, double cpBaseRefMeters,
+                       double cpRovTargetMeters, double cpBaseTargetMeters,
+                       const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                       const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                       const gtsam::Point3& basePos, double lam,
+                       const gtsam::noiseModel::Base* model);
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
+  gtsam::Vector evaluateError(const gtsam::Point3& pos, const double& ambRef, const double& ambTarget) const;
+  void serialize() const;
+};
+
+virtual class DoubleDifferenceCarrierPhaseFactorArm : gtsam::NonlinearFactor {
+  DoubleDifferenceCarrierPhaseFactorArm(gtsam::Key poseKey, gtsam::Key ambRefKey, gtsam::Key ambTargetKey,
+                          double cpRovRefMeters, double cpBaseRefMeters,
+                          double cpRovTargetMeters, double cpBaseTargetMeters,
+                          const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                          const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                          const gtsam::Point3& basePos, double lam,
+                          const gtsam::Point3& leverArm,
+                          const gtsam::noiseModel::Base* model);
+  DoubleDifferenceCarrierPhaseFactorArm(gtsam::Key poseKey, gtsam::Key ambRefKey, gtsam::Key ambTargetKey,
+                          double cpRovRefMeters, double cpBaseRefMeters,
+                          double cpRovTargetMeters, double cpBaseTargetMeters,
+                          const gtsam::Point3& satRefRov, const gtsam::Point3& satTargetRov,
+                          const gtsam::Point3& satRefBase, const gtsam::Point3& satTargetBase,
+                          const gtsam::Point3& basePos, double lam,
+                          const gtsam::Point3& leverArm, const gtsam::Pose3& ecef_T_nav,
+                          const gtsam::noiseModel::Base* model);
+  void print(string s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const;
+  bool equals(const gtsam::NonlinearFactor& expected, double tol) const;
+  gtsam::Vector evaluateError(const gtsam::Pose3& pose, const double& ambRef, const double& ambTarget) const;
+  const gtsam::Point3& leverArm() const;
   void serialize() const;
 };
 
@@ -676,7 +856,7 @@ virtual class ManifoldEKF {
   // Accessors
   M state() const;
   gtsam::Matrix covariance() const;
-  int dimension() const;
+  size_t dimension() const;
 
   // Predict with provided next state and Jacobian
   void predict(const M& X_next, gtsam::Matrix F, gtsam::Matrix Q);
@@ -791,5 +971,113 @@ class Gal3ImuEKF : gtsam::InvariantEKF<gtsam::Gal3> {
 
   // Predict using IMU measurements
   void predict(const gtsam::Vector& omega_b, const gtsam::Vector& f_b, double dt);
+};
+
+#include <gtsam/navigation/LeggedEstimator.h>
+class ContactMeasurement {
+  ContactMeasurement();
+  size_t foot;
+  gtsam::Vector3 bodyPoint;
+  bool touchdown;
+};
+
+class LeggedEstimatorParams {
+  LeggedEstimatorParams();
+  std::shared_ptr<gtsam::PreintegrationParams> preintegrationParams;
+  gtsam::Pose3 body_P_imu;
+  double footholdProcessSigma;
+  double footholdInitSigma;
+  gtsam::Matrix3 contactCovariance;
+  double heightPriorSigma;
+  bool useRobustContactNoise;
+  double robustContactHuberK;
+  gtsam::imuBias::ConstantBias imuBias;
+  double biasAccRandomWalkSigma;
+  double biasOmegaRandomWalkSigma;
+  bool useFullContactInitialization;
+  bool marginalizeLeavingFoot;
+};
+
+virtual class LeggedEstimator {
+  void turnHeightPriorOn(double terrainHeight);
+  void turnHeightPriorOff();
+  void predict(const gtsam::Vector3& omegaBody,
+               const gtsam::Vector3& specificForceBody, double dt);
+  void processContacts(
+      const std::vector<gtsam::ContactMeasurement>& activeContacts);
+  gtsam::ExtendedPose3d estimate() const;
+  gtsam::imuBias::ConstantBias estimateBias() const;
+};
+
+class LeggedInvariantEKF : gtsam::LeggedEstimator {
+  LeggedInvariantEKF(const gtsam::NavState& navState0,
+                     const gtsam::Matrix& footholds0,
+                     const gtsam::Matrix& P0,
+                     const gtsam::LeggedEstimatorParams& params,
+                     const std::vector<std::string>& footNames);
+  void turnHeightPriorOn(double terrainHeight);
+  void turnHeightPriorOff();
+  void predict(const gtsam::Vector3& omegaBody,
+               const gtsam::Vector3& specificForceBody, double dt);
+  void processContacts(
+      const std::vector<gtsam::ContactMeasurement>& activeContacts);
+  gtsam::ExtendedPose3d estimate() const;
+  gtsam::imuBias::ConstantBias estimateBias() const;
+  gtsam::Matrix covariance() const;
+  size_t numFeet() const;
+};
+
+class LeggedInvariantIEKF : gtsam::LeggedInvariantEKF {
+  LeggedInvariantIEKF(const gtsam::NavState& navState0,
+                      const gtsam::Matrix& footholds0,
+                      const gtsam::Matrix& P0,
+                      const gtsam::LeggedEstimatorParams& params,
+                      const std::vector<std::string>& footNames);
+  void turnHeightPriorOn(double terrainHeight);
+  void turnHeightPriorOff();
+  void predict(const gtsam::Vector3& omegaBody,
+               const gtsam::Vector3& specificForceBody, double dt);
+  void processContacts(
+      const std::vector<gtsam::ContactMeasurement>& activeContacts);
+  gtsam::ExtendedPose3d estimate() const;
+  gtsam::imuBias::ConstantBias estimateBias() const;
+  gtsam::Matrix covariance() const;
+  size_t numFeet() const;
+};
+
+class LeggedFixedLagSmoother : gtsam::LeggedEstimator {
+  LeggedFixedLagSmoother(const gtsam::NavState& navState0,
+                         const gtsam::Matrix& footholds0,
+                         const gtsam::Matrix9& baseCovariance0,
+                         const gtsam::LeggedEstimatorParams& params,
+                         double lagSeconds,
+                         const std::vector<std::string>& footNames);
+  void turnHeightPriorOn(double terrainHeight);
+  void turnHeightPriorOff();
+  void predict(const gtsam::Vector3& omegaBody,
+               const gtsam::Vector3& specificForceBody, double dt);
+  void processContacts(
+      const std::vector<gtsam::ContactMeasurement>& activeContacts);
+  gtsam::ExtendedPose3d estimate() const;
+  gtsam::imuBias::ConstantBias estimateBias() const;
+  size_t numFeet() const;
+};
+
+class LeggedCombinedFixedLagSmoother : gtsam::LeggedEstimator {
+  LeggedCombinedFixedLagSmoother(
+      const gtsam::NavState& navState0,
+      const gtsam::Matrix& footholds0,
+      const gtsam::Matrix9& baseCovariance0,
+      const gtsam::LeggedEstimatorParams& params, double lagSeconds,
+      const std::vector<std::string>& footNames);
+  void turnHeightPriorOn(double terrainHeight);
+  void turnHeightPriorOff();
+  void predict(const gtsam::Vector3& omegaBody,
+               const gtsam::Vector3& specificForceBody, double dt);
+  void processContacts(
+      const std::vector<gtsam::ContactMeasurement>& activeContacts);
+  gtsam::ExtendedPose3d estimate() const;
+  gtsam::imuBias::ConstantBias estimateBias() const;
+  size_t numFeet() const;
 };
 }

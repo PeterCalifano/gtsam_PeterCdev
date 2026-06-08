@@ -1075,5 +1075,13 @@ TEST(NoiseModel, NegLogNormalizationConstant3D) {
 }
 
 /* ************************************************************************* */
+// Negative sigma values should throw (#695)
+TEST(NoiseModel, NegativeSigmaThrows) {
+  CHECK_EXCEPTION(noiseModel::Isotropic::Sigma(2, -2.0), std::invalid_argument);
+  CHECK_EXCEPTION(noiseModel::Isotropic::Variance(2, -1.0), std::invalid_argument);
+  CHECK_EXCEPTION(noiseModel::Diagonal::Sigmas(Vector3(-1.0, 2.0, 3.0)), std::invalid_argument);
+}
+
+/* ************************************************************************* */
 int main() {  TestResult tr; return TestRegistry::runAllTests(tr); }
 /* ************************************************************************* */

@@ -31,44 +31,33 @@
 #include <gtsam/linear/LossFunctions.h>
 #include <gtsam/nonlinear/GncParams.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
-#include <gtsam/nonlinear/internal/ChiSquaredInverse.h>
 
 namespace gtsam {
 /*
  * Quantile of chi-squared distribution with given degrees of freedom at probability alpha.
  * Equivalent to chi2inv in Matlab.
  */
-static double Chi2inv(const double alpha, const size_t dofs) {
-  return internal::chiSquaredQuantile(dofs, alpha);
-}
+GTSAM_EXPORT double Chi2inv(const double alpha, const size_t dofs);
 
 /**
- * @enum Type
+ * @enum GncFactorType
  * @brief Enum to classify factor types in GNC optimization.
  */
-enum class Type {
+enum class GncFactorType {
   Normal,         ///< Normal case.
   Inlier,         ///< Factor is a known inlier.
   Outlier,        ///< Factor is a known outlier.
   NonNoiseModel,  ///< Factor does not have a noise model
-  NullPointer      ///< Factor pointer is null.
+  NullPointer     ///< Factor pointer is null.
 };
 
-bool isNullType(Type type) {
-  return type == Type::NullPointer;
-}
+GTSAM_EXPORT bool isNullType(GncFactorType type);
 
-bool isNonNoiseModelType(Type type) {
-  return type == Type::NonNoiseModel;
-}
+GTSAM_EXPORT bool isNonNoiseModelType(GncFactorType type);
 
-bool needsWeightUpdate(Type type) {
-  return type == Type::Normal;
-}
+GTSAM_EXPORT bool needsWeightUpdate(GncFactorType type);
 
-bool hasNoise(Type type) {
-  return type == Type::Normal || type == Type::Inlier || type == Type::Outlier;
-}
+GTSAM_EXPORT bool hasNoise(GncFactorType type);
 
 /* ************************************************************************* */
 template<class GncParameters>
@@ -95,7 +84,7 @@ class GncOptimizer {
   Vector barcSq_;
 
   /// Cached factor types for GNC.
-  std::vector<Type> factorTypes_;
+  std::vector<GncFactorType> factorTypes_;
 
  public:
   /// Constructor.
@@ -106,10 +95,10 @@ class GncOptimizer {
 
     // make sure all noiseModels are Gaussian or convert to Gaussian
     nfg_.resize(graph.size());
-    factorTypes_.assign(graph.size(), Type::NullPointer);
+    factorTypes_.assign(graph.size(), GncFactorType::NullPointer);
     for (size_t i = 0; i < graph.size(); i++) {
       if (!graph[i]) {
-        factorTypes_[i] = Type::NullPointer;
+        factorTypes_[i] = GncFactorType::NullPointer;
         continue;
       }
       NoiseModelFactor::shared_ptr factor = graph.at<NoiseModelFactor>(i);
@@ -119,14 +108,14 @@ class GncOptimizer {
             " true if the factor graph contains factors without noise model.");
         }
         nfg_[i] = graph[i];
-        factorTypes_[i] = Type::NonNoiseModel;
+        factorTypes_[i] = GncFactorType::NonNoiseModel;
         continue;
       }
       auto robust =
             std::dynamic_pointer_cast<noiseModel::Robust>(factor->noiseModel());
       // if the factor has a robust loss, we remove the robust loss
       nfg_[i] = robust ? factor-> cloneWithNewNoiseModel(robust->noise()) : factor;
-      factorTypes_[i] = Type::Normal;
+      factorTypes_[i] = GncFactorType::Normal;
     }
 
     // check that known inliers are in the graph
@@ -136,7 +125,7 @@ class GncOptimizer {
                   "that are not in the factor graph to be known inliers.");
       }
       if (!isNonNoiseModelType(factorTypes_[params.knownInliers[i]])) {
-        factorTypes_[params.knownInliers[i]] = Type::Inlier;
+        factorTypes_[params.knownInliers[i]] = GncFactorType::Inlier;
       }
     }
     // check that known outliers are in the graph
@@ -150,7 +139,7 @@ class GncOptimizer {
         throw std::runtime_error("GncOptimizer::constructor: the user has selected one or more measurements"
                   " to be an outlier that is either an inlier or a non noise model factor.");
       }
-      factorTypes_[params.knownOutliers[i]] = Type::Outlier;
+      factorTypes_[params.knownOutliers[i]] = GncFactorType::Outlier;
     }
 
     // initialize weights (if we don't have prior knowledge of inliers/outliers
@@ -252,7 +241,7 @@ class GncOptimizer {
     // For GM: if residual error is small, mu -> 0
     // For TLS: if residual error is small, mu -> -1
     int nrUnknownInOrOut = 0;
-    for (Type t : factorTypes_) {
+    for (GncFactorType t : factorTypes_) {
       if (needsWeightUpdate(t)) {
         nrUnknownInOrOut++;
       }
