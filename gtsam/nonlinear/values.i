@@ -123,6 +123,8 @@ class Values {
   void insert(gtsam::Key j, const gtsam::imuBias::ConstantBias& constant_bias);
   void insert(gtsam::Key j, const gtsam::NavState& nav_state);
   void insert(gtsam::Key j, double c);
+  // Preserve scalar type when MATLAB overload resolution would otherwise select Vector1.
+  void insertDouble(gtsam::Key j, double c);
 
   // The order is important: gtsam::Vector has to precede Point2/Point3 so `atVector`
   // can work for those fixed-size vectors.
