@@ -30,6 +30,7 @@
 #include <gtsam/navigation/ScenarioRunner.h>
 #include <gtsam/nonlinear/Values.h>
 
+#include <array>
 #include <list>
 
 #include "imuFactorTesting.h"
@@ -74,6 +75,70 @@ TEST_PIM(CombinedImuFactor, PreintegratedMeasurements ) {
   EXPECT(assert_equal(Vector(expected1.deltaVij()), actual1.deltaVij(), tol));
   EXPECT(assert_equal(expected1.deltaRij(), actual1.deltaRij(), tol));
   DOUBLES_EQUAL(expected1.deltaTij(), actual1.deltaTij(), tol);
+}
+
+/* ************************************************************************* */
+TEST_PIM(CombinedImuFactor, ReturnedDynamicsReconstructCovariance) {
+  const auto params = combined::Params(1e-8 * I_3x3, 1e-10 * I_3x3);
+  const Bias bias(Vector3(0.01, -0.02, 0.03),
+                  Vector3(-0.001, 0.002, -0.003));
+
+  // A nonzero prior exercises both propagation and the added process noise.
+  const Eigen::Matrix<double, 15, 15> initialCovariance =
+      1e-4 * Eigen::Matrix<double, 15, 15>::Identity();
+  CombinedPIM observed(params, bias, initialCovariance);
+  CombinedPIM standard(params, bias, initialCovariance);
+  Eigen::Matrix<double, 15, 15> propagated = initialCovariance;
+
+  const std::array<Vector3, 3> accelerations{
+      Vector3(0.1, -0.2, 9.7), Vector3(0.2, -0.1, 9.8),
+      Vector3(-0.1, 0.3, 9.6)};
+  const std::array<Vector3, 3> angularVelocities{
+      Vector3(0.02, -0.03, 0.01), Vector3(-0.01, 0.04, 0.03),
+      Vector3(0.03, 0.02, -0.02)};
+  const std::array<double, 3> intervals{0.004, 0.007, 0.005};
+
+  for (size_t index = 0; index < intervals.size(); ++index) {
+    const auto step = observed.integrateMeasurementWithDynamics(
+        accelerations[index], angularVelocities[index], intervals[index]);
+    standard.integrateMeasurement(accelerations[index],
+                                  angularVelocities[index], intervals[index]);
+    propagated = step.transition * propagated * step.transition.transpose() +
+                 step.processCovariance;
+
+    EXPECT(assert_equal(propagated, observed.preintMeasCov(), 1e-12));
+    EXPECT(assert_equal(standard.preintMeasCov(), observed.preintMeasCov(),
+                        1e-12));
+    EXPECT(assert_equal(standard.deltaRij(), observed.deltaRij(), 1e-12));
+    EXPECT(assert_equal(standard.deltaPij(), observed.deltaPij(), 1e-12));
+    EXPECT(assert_equal(standard.deltaVij(), observed.deltaVij(), 1e-12));
+    DOUBLES_EQUAL(standard.deltaTij(), observed.deltaTij(), 1e-12);
+
+    EXPECT(step.gyroSampleCovariance.isApprox(
+        params->gyroscopeCovariance / intervals[index], 1e-12));
+    EXPECT(step.gyroNoiseMap.bottomRows(12).isZero(1e-12));
+  }
+}
+
+/* ************************************************************************* */
+TEST_PIM(CombinedImuFactor, ReturnedGyroNoiseReconstructsProcessCovariance) {
+  // Isolate gyro noise so the returned map must explain the full noise term.
+  const auto params = combined::Params();
+  params->accelerometerCovariance.setZero();
+  params->integrationCovariance.setZero();
+  CombinedPIM observed(params);
+  const Vector3 acceleration(0.3, -0.2, 9.7);
+  const Vector3 angularVelocity(0.2, -0.1, 0.4);
+
+  for (const double dt : {0.004, 0.007, 0.005}) {
+    const auto step = observed.integrateMeasurementWithDynamics(
+        acceleration, angularVelocity, dt);
+    const Matrix expected = step.gyroNoiseMap * step.gyroSampleCovariance *
+                            step.gyroNoiseMap.transpose();
+
+    EXPECT(assert_equal(expected, step.processCovariance, 1e-12));
+    EXPECT(expected.trace() > 0.0);
+  }
 }
 
 

@@ -97,6 +97,15 @@ void PreintegratedCombinedMeasurementsT<
     PreintegrationType>::integrateMeasurement(const Vector3& measuredAcc,
                                               const Vector3& measuredOmega,
                                               double dt) {
+  (void)integrateMeasurementWithDynamics(measuredAcc, measuredOmega, dt);
+}
+
+//------------------------------------------------------------------------------
+template <class PreintegrationType>
+CombinedPreintegrationStep
+PreintegratedCombinedMeasurementsT<PreintegrationType>::
+    integrateMeasurementWithDynamics(const Vector3& measuredAcc,
+                                     const Vector3& measuredOmega, double dt) {
   if (dt <= 0) {
     throw std::runtime_error(
         "PreintegratedCombinedMeasurements::integrateMeasurement: dt <=0");
@@ -114,50 +123,55 @@ void PreintegratedCombinedMeasurementsT<
   // and preintegrated measurements
 
   // Single Jacobians to propagate covariance
-  Matrix3 theta_H_omega = C.topRows<3>();
-  Matrix3 pos_H_acc = B.middleRows<3>(3);
-  Matrix3 vel_H_acc = B.bottomRows<3>();
+  const Matrix3 theta_H_omega = C.topRows<3>();
+  const Matrix3 pos_H_acc = B.middleRows<3>(3);
+  const Matrix3 vel_H_acc = B.bottomRows<3>();
 
   // overall Jacobian wrt preintegrated measurements (df/dx)
-  Eigen::Matrix<double, 15, 15> F;
-  F.setZero();
-  F.block<9, 9>(0, 0) = A;
-  F.block<3, 3>(0, 12) = theta_H_omega;
-  F.block<3, 3>(3, 9) = pos_H_acc;
-  F.block<3, 3>(6, 9) = vel_H_acc;
-  F.block<6, 6>(9, 9) = I_6x6;
+  CombinedPreintegrationStep result;
+  result.transition.block<9, 9>(0, 0) = A;
+  result.transition.block<3, 3>(0, 12) = theta_H_omega;
+  result.transition.block<3, 3>(3, 9) = pos_H_acc;
+  result.transition.block<3, 3>(6, 9) = vel_H_acc;
+  result.transition.block<6, 6>(9, 9) = I_6x6;
 
   // Update the uncertainty on the state (matrix F in [4]).
-  preintMeasCov_ = F * preintMeasCov_ * F.transpose();
+  preintMeasCov_ = result.transition * preintMeasCov_ *
+                   result.transition.transpose();
 
   // propagate uncertainty
   // TODO(frank): use noiseModel routine so we can have arbitrary noise models.
   const Matrix3& aCov = this->p().accelerometerCovariance;
   const Matrix3& wCov = this->p().gyroscopeCovariance;
   const Matrix3& iCov = this->p().integrationCovariance;
+  result.gyroSampleCovariance = wCov / dt;
 
   // first order uncertainty propagation
   // Optimized matrix mult: (1/dt) * G * measurementCovariance * G.transpose()
-  Eigen::Matrix<double, 15, 15> G_measCov_Gt;
-  G_measCov_Gt.setZero(15, 15);
-
   // BLOCK DIAGONAL TERMS
-  D_R_R(&G_measCov_Gt) =
-      (theta_H_omega * (wCov / dt) * theta_H_omega.transpose());
+  D_R_R(&result.processCovariance) =
+      (theta_H_omega * result.gyroSampleCovariance * theta_H_omega.transpose());
 
-  D_t_t(&G_measCov_Gt) =
+  D_t_t(&result.processCovariance) =
       (pos_H_acc * (aCov / dt) * pos_H_acc.transpose()) + (dt * iCov);
 
-  D_v_v(&G_measCov_Gt) = (vel_H_acc * (aCov / dt) * vel_H_acc.transpose());
+  D_v_v(&result.processCovariance) =
+      (vel_H_acc * (aCov / dt) * vel_H_acc.transpose());
 
-  D_a_a(&G_measCov_Gt) = dt * this->p().biasAccCovariance;
-  D_g_g(&G_measCov_Gt) = dt * this->p().biasOmegaCovariance;
+  D_a_a(&result.processCovariance) = dt * this->p().biasAccCovariance;
+  D_g_g(&result.processCovariance) = dt * this->p().biasOmegaCovariance;
 
   // OFF BLOCK DIAGONAL TERMS
-  D_t_v(&G_measCov_Gt) = (pos_H_acc * (aCov / dt) * vel_H_acc.transpose());
-  D_v_t(&G_measCov_Gt) = (vel_H_acc * (aCov / dt) * pos_H_acc.transpose());
+  D_t_v(&result.processCovariance) =
+      (pos_H_acc * (aCov / dt) * vel_H_acc.transpose());
+  D_v_t(&result.processCovariance) =
+      (vel_H_acc * (aCov / dt) * pos_H_acc.transpose());
 
-  preintMeasCov_.noalias() += G_measCov_Gt;
+  preintMeasCov_.noalias() += result.processCovariance;
+
+  // Expose the gyro contribution used above for shared-noise conditioning.
+  result.gyroNoiseMap.topRows<3>() = theta_H_omega;
+  return result;
 }
 
 //------------------------------------------------------------------------------

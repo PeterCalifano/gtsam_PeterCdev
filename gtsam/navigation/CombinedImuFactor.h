@@ -28,6 +28,31 @@
 
 namespace gtsam {
 
+/**
+ * Dynamics and noise contribution of one combined-preintegration update.
+ *
+ * Rows use the covariance order [rotation, position, velocity, biasAcc,
+ * biasOmega] and the selected preintegration type's error coordinates.
+ * The matrices satisfy P_next = transition * P * transition.transpose() +
+ * processCovariance. They describe the existing first-order covariance model.
+ */
+struct GTSAM_EXPORT CombinedPreintegrationStep {
+  /// Propagate the covariance from before this sample to after it.
+  Eigen::Matrix<double, 15, 15> transition =
+      Eigen::Matrix<double, 15, 15>::Zero();
+
+  /// Discrete measurement, integration, and bias random-walk contribution.
+  Eigen::Matrix<double, 15, 15> processCovariance =
+      Eigen::Matrix<double, 15, 15>::Zero();
+
+  /// Map sampled gyro noise into the rotation rows used by this covariance model.
+  Eigen::Matrix<double, 15, 3> gyroNoiseMap =
+      Eigen::Matrix<double, 15, 3>::Zero();
+
+  /// Gyroscope covariance density divided by the sample duration.
+  Matrix3 gyroSampleCovariance = Matrix3::Zero();
+};
+
 #ifdef GTSAM_TANGENT_PREINTEGRATION
 typedef TangentPreintegration DefaultPreintegrationType;
 #else
@@ -162,6 +187,23 @@ class GTSAM_EXPORT PreintegratedCombinedMeasurementsT : public PreintegrationTyp
   void integrateMeasurement(const Vector3& measuredAcc,
                             const Vector3& measuredOmega,
                             const double dt) override;
+
+  /**
+   * Add one IMU measurement and return the exact first-order dynamics used by
+   * the standard combined-preintegration covariance update.
+   *
+   * This permits another measurement driven by the same sampled gyroscope
+   * noise to preserve its direct cross-covariance without replaying raw IMU
+   * data during factor relinearization.
+   *
+   * @param measuredAcc Acceleration in the sensor frame.
+   * @param measuredOmega Angular velocity in the sensor frame.
+   * @param dt Positive sample duration in seconds.
+   * @return Value-owned dynamics and noise matrices for this sample.
+   * @throws std::runtime_error If dt is nonpositive.
+   */
+  CombinedPreintegrationStep integrateMeasurementWithDynamics(
+      const Vector3& measuredAcc, const Vector3& measuredOmega, double dt);
 
   /// @}
 
