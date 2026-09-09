@@ -20,6 +20,7 @@
 #include <gtsam/base/Testable.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/linear/JointMarginal.h>
+#include <gtsam/navigation/FootPoseFactors.h>
 #include <gtsam/navigation/LeggedEstimator.h>
 #include <gtsam/navigation/LeggedEstimatorFactors.h>
 #include <gtsam/navigation/NavStateImuEKF.h>
@@ -45,6 +46,120 @@ using noiseModel::Diagonal;
 using noiseModel::Gaussian;
 using noiseModel::Isotropic;
 using symbol_shorthand::X;
+
+// The ordinary smoother stores pose and velocity in one NavState. These
+// adapters retain that state layout and reuse the canonical contact residuals.
+class NavStateFootPoseFactor : public NoiseModelFactorN<NavState, Pose3> {
+  using Base = NoiseModelFactorN<NavState, Pose3>;
+  FootPoseFactor factor_;
+
+ public:
+  NavStateFootPoseFactor(Key navKey, Key footKey, const Pose3& measurement,
+                         const SharedNoiseModel& noise)
+      : Base(noise, navKey, footKey),
+        factor_(navKey, footKey, measurement, noise) {}
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<NavStateFootPoseFactor>(*this);
+  }
+
+  Vector evaluateError(const NavState& state, const Pose3& foot,
+                       OptionalMatrixType H1 = nullptr,
+                       OptionalMatrixType H2 = nullptr) const override {
+    Matrix6 poseH, footH;
+    const Vector6 error = factor_.evaluateErrorFixedSize(
+        state.pose(), foot, H1 ? &poseH : nullptr, H2 ? &footH : nullptr);
+    if (H1) {
+      *H1 = Matrix::Zero(6, 9);
+      H1->leftCols<6>() = poseH;
+    }
+    if (H2) *H2 = footH;
+    return error;
+  }
+};
+
+class NavStateFootPoseVelocityFactor
+    : public NoiseModelFactorN<NavState, imuBias::ConstantBias, Pose3> {
+  using Base = NoiseModelFactorN<NavState, imuBias::ConstantBias, Pose3>;
+  FootPoseVelocityFactor factor_;
+
+ public:
+  NavStateFootPoseVelocityFactor(Key navKey, Key biasKey, Key footKey,
+                                 const FootPoseContactMeasurement& measurement,
+                                 const SharedNoiseModel& noise)
+      : Base(noise, navKey, biasKey, footKey),
+        factor_(navKey, navKey, biasKey, footKey, measurement.imuPFoot,
+                measurement.velocity->footVelocityImu,
+                measurement.velocity->angularVelocityImu, noise) {}
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<NavStateFootPoseVelocityFactor>(*this);
+  }
+
+  Vector evaluateError(const NavState& state, const imuBias::ConstantBias& bias,
+                       const Pose3& foot, OptionalMatrixType H1 = nullptr,
+                       OptionalMatrixType H2 = nullptr,
+                       OptionalMatrixType H3 = nullptr) const override {
+    Matrix poseH, velocityH;
+    const Vector error = factor_.evaluateError(
+        state.pose(), state.velocity(), bias, foot, H1 ? &poseH : nullptr,
+        H1 ? &velocityH : nullptr, H2, H3);
+    if (H1) {
+      H1->resize(9, 9);
+      H1->leftCols<6>() = poseH;
+      // NavState retracts velocity in local axes; the inner factor takes a
+      // world-frame Vector3 velocity.
+      H1->rightCols<3>() = velocityH * state.rotation().matrix();
+    }
+    return error;
+  }
+};
+
+double footPoseHeight(const Pose3& pose, OptionalJacobian<1, 6> H) {
+  if (H) {
+    H->leftCols<3>().setZero();
+    H->rightCols<3>() = pose.rotation().matrix().row(2);
+  }
+  return pose.z();
+}
+
+std::vector<ContactMeasurement> validatePoseContactPacket(
+    std::vector<FootPoseContactMeasurement>& contacts, size_t numFeet) {
+  std::sort(contacts.begin(), contacts.end(),
+            [](const auto& a, const auto& b) { return a.foot < b.foot; });
+
+  std::vector<ContactMeasurement> episodes;
+  episodes.reserve(contacts.size());
+  for (const auto& contact : contacts) {
+    if (contact.foot >= numFeet ||
+        (!episodes.empty() && episodes.back().foot == contact.foot)) {
+      throw std::invalid_argument(
+          "processPoseContacts: foot indices must be unique and in range.");
+    }
+    if (!contact.imuPFoot.matrix().allFinite() ||
+        (contact.velocity &&
+         (!contact.velocity->footVelocityImu.allFinite() ||
+          !contact.velocity->angularVelocityImu.allFinite()))) {
+      throw std::invalid_argument(
+          "processPoseContacts: pose and velocity measurements must be "
+          "finite.");
+    }
+
+    // Only the covariance used by the selected residual is authoritative.
+    const Matrix covariance = contact.velocity
+                                  ? Matrix(contact.velocity->covariance)
+                                  : Matrix(contact.poseCovariance);
+    if (!covariance.allFinite() ||
+        !covariance.isApprox(covariance.transpose(), 1e-12) ||
+        Eigen::LLT<Matrix>(covariance).info() != Eigen::Success) {
+      throw std::invalid_argument(
+          "processPoseContacts: covariance must be finite, symmetric, and "
+          "positive definite.");
+    }
+    episodes.emplace_back(contact.foot, Vector3::Zero(), contact.touchdown);
+  }
+  return episodes;
+}
 
 void addNavigationPrior(NonlinearFactorGraph& factors, Key poseKey,
                         Key velocityKey, const NavState& state,
@@ -1228,6 +1343,7 @@ LeggedFixedLagSmoother::LeggedFixedLagSmoother(
       initialized_(numFeet_, false),
       footEpisodes_(numFeet_, 0),
       activeFootKeys_(numFeet_),
+      poseFoot_(numFeet_, false),
       optimizedBaseState_(navState0),
       deadReckonedState_(navState0),
       biasEstimate_(params.imuBias) {
@@ -1284,7 +1400,9 @@ ExtendedPose3d LeggedFixedLagSmoother::estimate() const {
   for (size_t foot = 0; foot < numFeet_; ++foot) {
     if (activeFootKeys_[foot] && values.exists(*activeFootKeys_[foot])) {
       footholds.col(static_cast<Eigen::Index>(foot)) =
-          values.at<Point3>(*activeFootKeys_[foot]);
+          poseFoot_[foot]
+              ? values.at<Pose3>(*activeFootKeys_[foot]).translation()
+              : values.at<Point3>(*activeFootKeys_[foot]);
     }
   }
   return MakeEstimate(deadReckonedState_, footholds);
@@ -1327,41 +1445,45 @@ void LeggedFixedLagSmoother::processContacts(
 }
 
 /* ************************************************************************* */
-void LeggedFixedLagSmoother::processCorrelatedContacts(
-    const std::vector<CorrelatedFourPointContactMeasurement>&
-        activeContactGroups) {
-  if (awaitingFullContactInitialization()) {
-    throw std::logic_error(
-        "LeggedFixedLagSmoother::processCorrelatedContacts requires "
-        "full-contact initialization to be disabled.");
-  }
-  std::vector<ContactMeasurement> sortedContacts =
-      validateCorrelatedContactPacket(
-          activeContactGroups, numFeet_,
-          "LeggedFixedLagSmoother::processCorrelatedContacts");
-  std::sort(sortedContacts.begin(), sortedContacts.end(),
-            [](const ContactMeasurement& a, const ContactMeasurement& b) {
-              return a.foot < b.foot;
-            });
+void LeggedFixedLagSmoother::processPoseContacts(
+    const std::vector<FootPoseContactMeasurement>& activeContacts) {
+  auto sortedPoses = activeContacts;
+  auto episodes = validatePoseContactPacket(sortedPoses, numFeet_);
+  processContactPacket(std::move(episodes), &sortedPoses);
+}
 
-  processContactPacket(std::move(sortedContacts), &activeContactGroups);
+/* ************************************************************************* */
+void LeggedFixedLagSmoother::processCorrelatedContacts(
+    const std::vector<CorrelatedFourPointContactMeasurement>&) {
+  throw std::invalid_argument(
+      "LeggedFixedLagSmoother: correlated corner measurements are "
+      "filter-only; use processPoseContacts for rigid-foot graph contacts.");
 }
 
 /* ************************************************************************* */
 void LeggedFixedLagSmoother::processContactPacket(
     std::vector<ContactMeasurement> sortedContacts,
-    const std::vector<CorrelatedFourPointContactMeasurement>*
-        correlatedGroups) {
+    const std::vector<FootPoseContactMeasurement>* poseContacts) {
   // Mark which foot indices are active in this packet.
   std::vector<bool> activeFeet(numFeet_, false);
   for (const ContactMeasurement& contact : sortedContacts) {
     activeFeet[contact.foot] = true;
+    if (activeFootKeys_[contact.foot] && !contact.touchdown &&
+        poseFoot_[contact.foot] != (poseContacts != nullptr)) {
+      throw std::invalid_argument(
+          "Changing contact state type requires a new contact episode.");
+    }
   }
 
+  const bool initializePoses =
+      awaitingFullContactInitialization() && poseContacts != nullptr;
   if (awaitingFullContactInitialization()) {
-    validateInitializationContacts(sortedContacts);
-    (void)maybeInitializeFromFullContact(sortedContacts, activeFeet);
-    return;
+    if (!poseContacts) {
+      validateInitializationContacts(sortedContacts);
+      (void)maybeInitializeFromFullContact(sortedContacts, activeFeet);
+      return;
+    }
+    if (sortedContacts.size() != numFeet_) return;
   }
 
   for (size_t foot = 0; foot < numFeet_; ++foot) {
@@ -1387,7 +1509,15 @@ void LeggedFixedLagSmoother::processContactPacket(
 
   Key baseKey = currentBaseKey();
   NavState baseState = currentBaseState();
-  if (hasPendingImu()) {
+  if (initializePoses) {
+    factors.emplace_shared<PriorFactor<NavState>>(baseKey, baseState,
+                                                  baseCovariance0_);
+    factors.emplace_shared<PriorFactor<imuBias::ConstantBias>>(
+        MakeBiasKey(), biasEstimate_, fixedLagBiasPriorModel());
+    values.insert(baseKey, baseState);
+    values.insert(MakeBiasKey(), biasEstimate_);
+    timestamps[baseKey] = currentTime_;
+  } else if (hasPendingImu()) {
     // Close the accumulated IMU interval with a new base node at this contact
     // event.
     const Key previousBaseKey = baseKey;
@@ -1404,7 +1534,10 @@ void LeggedFixedLagSmoother::processContactPacket(
     timestamps[baseKey] = currentTime_;
   }
 
-  for (const ContactMeasurement& contact : sortedContacts) {
+  for (size_t index = 0; index < sortedContacts.size(); ++index) {
+    const ContactMeasurement& contact = sortedContacts[index];
+    const FootPoseContactMeasurement* poseContact =
+        poseContacts ? &(*poseContacts)[index] : nullptr;
     if (contact.touchdown || !activeFootKeys_[contact.foot]) {
       // A new touchdown starts a fresh landmark episode with its own smoother
       // key.
@@ -1413,22 +1546,39 @@ void LeggedFixedLagSmoother::processContactPacket(
           MakeFootKey(contact.foot, footEpisodes_[contact.foot]);
       activeFootKeys_[contact.foot] = footKey;
       initialized_[contact.foot] = true;
-      const Point3 foothold = footholdFromMeasurement(
-          params_.body_P_imu, baseState, contact.bodyPoint);
-      values.insert(footKey, foothold);
-      // Touchdown reinitialization in the smoother gets an explicit point prior
-      // so the new landmark episode carries the same uncertainty as the filter
-      // variants after replacing a foot block.
-      factors.emplace_shared<PriorFactor<Point3>>(
-          footKey, foothold, Isotropic::Sigma(3, params_.footholdInitSigma));
+      poseFoot_[contact.foot] = poseContact != nullptr;
+      if (poseContact) {
+        // FK supplies an initial guess and one relative measurement. An extra
+        // foot prior derived from FK would count the same observation twice.
+        values.insert(footKey, baseState.pose() * poseContact->imuPFoot);
+      } else {
+        const Point3 foothold = footholdFromMeasurement(
+            params_.body_P_imu, baseState, contact.bodyPoint);
+        values.insert(footKey, foothold);
+        // Touchdown reinitialization in the smoother gets an explicit point
+        // prior so the new landmark episode carries the same uncertainty as the
+        // filter variants after replacing a foot block.
+        factors.emplace_shared<PriorFactor<Point3>>(
+            footKey, foothold, Isotropic::Sigma(3, params_.footholdInitSigma));
+      }
     }
 
-    // Add grouped factors after all four contact-episode keys exist.
     const Key footKey = *activeFootKeys_[contact.foot];
-    if (!correlatedGroups) {
+    if (poseContact) {
+      if (poseContact->velocity) {
+        factors.emplace_shared<NavStateFootPoseVelocityFactor>(
+            baseKey, MakeBiasKey(), footKey, *poseContact,
+            robustContactNoiseModel(params_,
+                                    poseContact->velocity->covariance));
+      } else {
+        factors.emplace_shared<NavStateFootPoseFactor>(
+            baseKey, footKey, poseContact->imuPFoot,
+            robustContactNoiseModel(params_, poseContact->poseCovariance));
+      }
+    } else {
       const Point3 measuredPoint =
           imuMeasurement(params_.body_P_imu, contact.bodyPoint);
-      
+
       if (contact.pointVelocity) {
         const PointContactVelocityMeasurement& velocity = *contact.pointVelocity;
         factors.emplace_shared<NavStatePointVelocityContactFactor>(
@@ -1450,9 +1600,15 @@ void LeggedFixedLagSmoother::processContactPacket(
     if (terrainHeight()) {
       // Terrain height is modeled as an additional unary prior on the foot
       // landmark.
-      factors.emplace_shared<PointHeightFactor>(
-          footKey, *terrainHeight(),
-          Isotropic::Sigma(1, params_.heightPriorSigma));
+      const auto noise = Isotropic::Sigma(1, params_.heightPriorSigma);
+      if (poseContact) {
+        factors.emplace_shared<ExpressionFactor<double>>(
+            noise, *terrainHeight(),
+            Expression<double>(footPoseHeight, Expression<Pose3>(footKey)));
+      } else {
+        factors.emplace_shared<PointHeightFactor>(footKey, *terrainHeight(),
+                                                  noise);
+      }
     }
     // Refresh the foot timestamp so active contact episodes stay inside the lag
     // window.
@@ -1460,38 +1616,8 @@ void LeggedFixedLagSmoother::processContactPacket(
     inContact_[contact.foot] = true;
   }
 
-  if (correlatedGroups) {
-    for (const CorrelatedFourPointContactMeasurement& group :
-         *correlatedGroups) {
-      const auto& points = group.points;
-      const auto measurements = imuMeasurements(params_.body_P_imu, group);
-      if (group.footOriginVelocity) {
-        const CorrelatedFourPointVelocityMeasurement& velocity =
-            *group.footOriginVelocity;
-        factors.emplace_shared<NavStateFourPointVelocityContactFactor>(
-            baseKey, *activeFootKeys_.at(points.at(0).foot),
-            *activeFootKeys_.at(points.at(1).foot),
-            *activeFootKeys_.at(points.at(2).foot),
-            *activeFootKeys_.at(points.at(3).foot), MakeBiasKey(), measurements,
-            imuMeasurement(params_.body_P_imu, velocity.bodyPoint),
-            imuVectorMeasurement(params_.body_P_imu,
-                                 velocity.bodyPointVelocity),
-            imuVectorMeasurement(params_.body_P_imu,
-                                 velocity.angularVelocityBody),
-            robustContactNoiseModel(params_,
-                                    velocity.positionVelocityCovariance));
-      } else {
-        factors.emplace_shared<NavStateFourPointContactFactor>(
-            baseKey, *activeFootKeys_.at(points.at(0).foot),
-            *activeFootKeys_.at(points.at(1).foot),
-            *activeFootKeys_.at(points.at(2).foot),
-            *activeFootKeys_.at(points.at(3).foot), measurements,
-            robustContactNoiseModel(params_, group.positionCovariance));
-      }
-    }
-  }
-
   smoother_->update(factors, values, timestamps);
+  if (initializePoses) fullContactInitialized_ = true;
   refreshEstimateFromSmoother();
   // Rebase dead reckoning on the optimized event state and bias estimate.
   pim_.resetIntegrationAndSetBias(biasEstimate_);
@@ -1539,6 +1665,7 @@ bool LeggedFixedLagSmoother::maybeInitializeFromFullContact(
   currentTime_ = 0.0;
   footEpisodes_.assign(numFeet_, 0);
   activeFootKeys_.assign(numFeet_, std::nullopt);
+  poseFoot_.assign(numFeet_, false);
   inContact_.assign(numFeet_, false);
   initialized_.assign(numFeet_, false);
 
@@ -1603,6 +1730,7 @@ LeggedCombinedFixedLagSmoother::LeggedCombinedFixedLagSmoother(
       initialized_(numFeet_, false),
       footEpisodes_(numFeet_, 0),
       activeFootKeys_(numFeet_),
+      poseFoot_(numFeet_, false),
       optimizedBaseState_(navState0),
       deadReckonedState_(navState0),
       biasEstimate_(params.imuBias) {
@@ -1665,7 +1793,9 @@ ExtendedPose3d LeggedCombinedFixedLagSmoother::estimate() const {
   for (size_t foot = 0; foot < numFeet_; ++foot) {
     if (activeFootKeys_[foot] && values.exists(*activeFootKeys_[foot])) {
       footholds.col(static_cast<Eigen::Index>(foot)) =
-          values.at<Point3>(*activeFootKeys_[foot]);
+          poseFoot_[foot]
+              ? values.at<Pose3>(*activeFootKeys_[foot]).translation()
+              : values.at<Point3>(*activeFootKeys_[foot]);
     }
   }
   return MakeEstimate(deadReckonedState_, footholds);
@@ -1707,41 +1837,45 @@ void LeggedCombinedFixedLagSmoother::processContacts(
 }
 
 /* ************************************************************************* */
-void LeggedCombinedFixedLagSmoother::processCorrelatedContacts(
-    const std::vector<CorrelatedFourPointContactMeasurement>&
-        activeContactGroups) {
-  if (awaitingFullContactInitialization()) {
-    throw std::logic_error(
-        "LeggedCombinedFixedLagSmoother::processCorrelatedContacts requires "
-        "full-contact initialization to be disabled.");
-  }
-  std::vector<ContactMeasurement> sortedContacts =
-      validateCorrelatedContactPacket(
-          activeContactGroups, numFeet_,
-          "LeggedCombinedFixedLagSmoother::processCorrelatedContacts");
-  std::sort(sortedContacts.begin(), sortedContacts.end(),
-            [](const ContactMeasurement& a, const ContactMeasurement& b) {
-              return a.foot < b.foot;
-            });
+void LeggedCombinedFixedLagSmoother::processPoseContacts(
+    const std::vector<FootPoseContactMeasurement>& activeContacts) {
+  auto sortedPoses = activeContacts;
+  auto episodes = validatePoseContactPacket(sortedPoses, numFeet_);
+  processContactPacket(std::move(episodes), &sortedPoses);
+}
 
-  processContactPacket(std::move(sortedContacts), &activeContactGroups);
+/* ************************************************************************* */
+void LeggedCombinedFixedLagSmoother::processCorrelatedContacts(
+    const std::vector<CorrelatedFourPointContactMeasurement>&) {
+  throw std::invalid_argument(
+      "LeggedCombinedFixedLagSmoother: correlated corner measurements are "
+      "filter-only; use processPoseContacts for rigid-foot graph contacts.");
 }
 
 /* ************************************************************************* */
 void LeggedCombinedFixedLagSmoother::processContactPacket(
     std::vector<ContactMeasurement> sortedContacts,
-    const std::vector<CorrelatedFourPointContactMeasurement>*
-        correlatedGroups) {
+    const std::vector<FootPoseContactMeasurement>* poseContacts) {
   // Mark which foot indices are active in this packet.
   std::vector<bool> activeFeet(numFeet_, false);
   for (const ContactMeasurement& contact : sortedContacts) {
     activeFeet[contact.foot] = true;
+    if (activeFootKeys_[contact.foot] && !contact.touchdown &&
+        poseFoot_[contact.foot] != (poseContacts != nullptr)) {
+      throw std::invalid_argument(
+          "Changing contact state type requires a new contact episode.");
+    }
   }
 
+  const bool initializePoses =
+      awaitingFullContactInitialization() && poseContacts != nullptr;
   if (awaitingFullContactInitialization()) {
-    validateInitializationContacts(sortedContacts);
-    (void)maybeInitializeFromFullContact(sortedContacts, activeFeet);
-    return;
+    if (!poseContacts) {
+      validateInitializationContacts(sortedContacts);
+      (void)maybeInitializeFromFullContact(sortedContacts, activeFeet);
+      return;
+    }
+    if (sortedContacts.size() != numFeet_) return;
   }
 
   for (size_t foot = 0; foot < numFeet_; ++foot) {
@@ -1768,7 +1902,15 @@ void LeggedCombinedFixedLagSmoother::processContactPacket(
   Key velocityKey = currentVelocityKey();
   Key biasKey = currentBiasKey();
   NavState baseState = currentBaseState();
-  if (hasPendingImu()) {
+  if (initializePoses) {
+    addNavigationPrior(factors, poseKey, velocityKey, baseState,
+                       baseCovariance0_);
+    factors.emplace_shared<PriorFactor<imuBias::ConstantBias>>(
+        biasKey, biasEstimate_, fixedLagBiasPriorModel());
+    values.insert(poseKey, baseState.pose());
+    values.insert(velocityKey, baseState.velocity());
+    values.insert(biasKey, biasEstimate_);
+  } else if (hasPendingImu()) {
     // Close the accumulated IMU interval with a new state and bias at this
     // contact event.
     const Key previousPoseKey = poseKey;
@@ -1790,7 +1932,10 @@ void LeggedCombinedFixedLagSmoother::processContactPacket(
   timestamps[velocityKey] = currentTime_;
   timestamps[biasKey] = currentTime_;
 
-  for (const ContactMeasurement& contact : sortedContacts) {
+  for (size_t index = 0; index < sortedContacts.size(); ++index) {
+    const ContactMeasurement& contact = sortedContacts[index];
+    const FootPoseContactMeasurement* poseContact =
+        poseContacts ? &(*poseContacts)[index] : nullptr;
     if (contact.touchdown || !activeFootKeys_[contact.foot]) {
       // A new touchdown starts a fresh landmark episode with its own smoother
       // key.
@@ -1799,18 +1944,36 @@ void LeggedCombinedFixedLagSmoother::processContactPacket(
           MakeFootKey(contact.foot, footEpisodes_[contact.foot]);
       activeFootKeys_[contact.foot] = footKey;
       initialized_[contact.foot] = true;
-      const Point3 foothold = footholdFromMeasurement(
-          params_.body_P_imu, baseState, contact.bodyPoint);
-      values.insert(footKey, foothold);
-      // Touchdown reinitialization uses the same loose point prior as the
-      // filter variants' foot-block replacement.
-      factors.emplace_shared<PriorFactor<Point3>>(
-          footKey, foothold, Isotropic::Sigma(3, params_.footholdInitSigma));
+      poseFoot_[contact.foot] = poseContact != nullptr;
+      if (poseContact) {
+        // FK supplies an initial guess and one relative measurement. An extra
+        // foot prior derived from FK would count the same observation twice.
+        values.insert(footKey, baseState.pose() * poseContact->imuPFoot);
+      } else {
+        const Point3 foothold = footholdFromMeasurement(
+            params_.body_P_imu, baseState, contact.bodyPoint);
+        values.insert(footKey, foothold);
+        // Touchdown reinitialization uses the same loose point prior as the
+        // filter variants' foot-block replacement.
+        factors.emplace_shared<PriorFactor<Point3>>(
+            footKey, foothold, Isotropic::Sigma(3, params_.footholdInitSigma));
+      }
     }
 
-    // Add grouped factors after all four contact-episode keys exist.
     const Key footKey = *activeFootKeys_[contact.foot];
-    if (!correlatedGroups) {
+    if (poseContact) {
+      if (poseContact->velocity) {
+        const auto& velocity = *poseContact->velocity;
+        factors.emplace_shared<FootPoseVelocityFactor>(
+            poseKey, velocityKey, biasKey, footKey, poseContact->imuPFoot,
+            velocity.footVelocityImu, velocity.angularVelocityImu,
+            robustContactNoiseModel(params_, velocity.covariance));
+      } else {
+        factors.emplace_shared<FootPoseFactor>(
+            poseKey, footKey, poseContact->imuPFoot,
+            robustContactNoiseModel(params_, poseContact->poseCovariance));
+      }
+    } else {
       const Point3 measuredPoint =
           imuMeasurement(params_.body_P_imu, contact.bodyPoint);
       if (contact.pointVelocity) {
@@ -1835,9 +1998,15 @@ void LeggedCombinedFixedLagSmoother::processContactPacket(
     if (terrainHeight()) {
       // Terrain height is modeled as an additional unary prior on the foot
       // landmark.
-      factors.emplace_shared<PointHeightFactor>(
-          footKey, *terrainHeight(),
-          Isotropic::Sigma(1, params_.heightPriorSigma));
+      const auto noise = Isotropic::Sigma(1, params_.heightPriorSigma);
+      if (poseContact) {
+        factors.emplace_shared<ExpressionFactor<double>>(
+            noise, *terrainHeight(),
+            Expression<double>(footPoseHeight, Expression<Pose3>(footKey)));
+      } else {
+        factors.emplace_shared<PointHeightFactor>(footKey, *terrainHeight(),
+                                                  noise);
+      }
     }
     // Refresh the foot timestamp so active contact episodes stay inside the lag
     // window.
@@ -1845,38 +2014,8 @@ void LeggedCombinedFixedLagSmoother::processContactPacket(
     inContact_[contact.foot] = true;
   }
 
-  if (correlatedGroups) {
-    for (const CorrelatedFourPointContactMeasurement& group :
-         *correlatedGroups) {
-      const auto& points = group.points;
-      const auto measurements = imuMeasurements(params_.body_P_imu, group);
-      if (group.footOriginVelocity) {
-        const CorrelatedFourPointVelocityMeasurement& velocity =
-            *group.footOriginVelocity;
-        factors.emplace_shared<Pose3FourPointVelocityContactFactor>(
-            poseKey, velocityKey, *activeFootKeys_.at(points.at(0).foot),
-            *activeFootKeys_.at(points.at(1).foot),
-            *activeFootKeys_.at(points.at(2).foot),
-            *activeFootKeys_.at(points.at(3).foot), biasKey, measurements,
-            imuMeasurement(params_.body_P_imu, velocity.bodyPoint),
-            imuVectorMeasurement(params_.body_P_imu,
-                                 velocity.bodyPointVelocity),
-            imuVectorMeasurement(params_.body_P_imu,
-                                 velocity.angularVelocityBody),
-            robustContactNoiseModel(params_,
-                                    velocity.positionVelocityCovariance));
-      } else {
-        factors.emplace_shared<Pose3FourPointContactFactor>(
-            poseKey, *activeFootKeys_.at(points.at(0).foot),
-            *activeFootKeys_.at(points.at(1).foot),
-            *activeFootKeys_.at(points.at(2).foot),
-            *activeFootKeys_.at(points.at(3).foot), measurements,
-            robustContactNoiseModel(params_, group.positionCovariance));
-      }
-    }
-  }
-
   smoother_->update(factors, values, timestamps);
+  if (initializePoses) fullContactInitialized_ = true;
   refreshEstimateFromSmoother();
   // Rebase dead reckoning on the optimized event state and bias estimate.
   pim_.resetIntegrationAndSetBias(biasEstimate_);
@@ -1925,6 +2064,7 @@ bool LeggedCombinedFixedLagSmoother::maybeInitializeFromFullContact(
   currentTime_ = 0.0;
   footEpisodes_.assign(numFeet_, 0);
   activeFootKeys_.assign(numFeet_, std::nullopt);
+  poseFoot_.assign(numFeet_, false);
   inContact_.assign(numFeet_, false);
   initialized_.assign(numFeet_, false);
 

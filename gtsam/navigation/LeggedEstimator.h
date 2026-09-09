@@ -117,6 +117,32 @@ struct CorrelatedFourPointContactMeasurement {
   std::optional<CorrelatedFourPointVelocityMeasurement> footOriginVelocity;
 };
 
+/**
+ * Optional foot-origin no-slip observation paired with a relative foot pose.
+ * Covariance order is [pose rotation, pose translation, IMU-frame velocity].
+ * Pose coordinates use the measured foot's right-local tangent. Angular rate
+ * and relative foot-origin velocity are expressed in IMU axes.
+ */
+struct FootPoseVelocityMeasurement {
+  Vector3 footVelocityImu = Vector3::Zero();
+  Vector3 angularVelocityImu = Vector3::Zero();
+  Matrix9 covariance = Matrix9::Identity();
+};
+
+/**
+ * Direct FK contact pose for graph smoothers; no corner representation.
+ * The caller converts base-relative FK into IMU-relative FK with the fixed
+ * extrinsic. Covariance is right-local, ordered rotation then translation.
+ * When velocity is present, its joint covariance replaces poseCovariance.
+ */
+struct FootPoseContactMeasurement {
+  size_t foot = 0;
+  Pose3 imuPFoot;
+  Matrix6 poseCovariance = Matrix6::Identity();
+  bool touchdown = false;
+  std::optional<FootPoseVelocityMeasurement> velocity;
+};
+
 /// Common estimator parameters shared by all four variants.
 struct LeggedEstimatorParams {
   std::shared_ptr<PreintegrationParams> preintegrationParams;
@@ -175,11 +201,12 @@ class GTSAM_EXPORT LeggedEstimator {
       const std::vector<ContactMeasurement>& activeContacts) = 0;
 
   /**
-   * Process the active physical-foot groups at the current estimator time.
+   * Process the active physical-foot groups in the EKF/IEKF variants.
    * Supply the complete active set, as for processContacts(). Point indices
    * select state entries; their order within each group selects covariance
    * rows.
-   * @throws std::invalid_argument for malformed measurements or covariances.
+   * @throws std::invalid_argument for malformed measurements or covariances,
+   *         or if called on a fixed-lag smoother.
    * @throws std::out_of_range for contact indices outside the configured state.
    * @throws std::logic_error while full-contact initialization is pending.
    */
@@ -406,7 +433,8 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   /// Number of feet tracked by the smoother front-end.
   size_t numFeet() const { return numFeet_; }
 
-  /// Current estimate in the shared `ExtendedPose3d` layout.
+  /// Current estimate in the shared `ExtendedPose3d` layout. Pose anchors
+  /// contribute their world translations; foot attitudes are not exported.
   ExtendedPose3d estimate() const override;
 
   /// Return the current single shared IMU bias estimate.
@@ -431,6 +459,20 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) override;
 
+  /**
+   * Process the complete active set of physical-foot poses.
+   * Full-contact startup waits for all feet, retains the navigation prior,
+   * and uses each FK observation once. Terrain constraints are opt-in.
+   * A point/pose type change requires a new touchdown or an ended episode.
+   * @param activeContacts All active physical feet; omitted feet end contact.
+   * @throws std::invalid_argument for invalid measurements, covariances, or
+   *         a representation change within an existing contact episode.
+   */
+  void processPoseContacts(
+      const std::vector<FootPoseContactMeasurement>& activeContacts);
+
+  /// Unsupported for smoothers; throws std::invalid_argument. Use
+  /// processPoseContacts for rigid feet or processContacts for single points.
   void processCorrelatedContacts(
       const std::vector<CorrelatedFourPointContactMeasurement>&
           activeContactGroups) override;
@@ -441,8 +483,7 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
       const std::vector<bool>& activeFeet);
   void processContactPacket(
       std::vector<ContactMeasurement> sortedContacts,
-      const std::vector<CorrelatedFourPointContactMeasurement>*
-          correlatedGroups);
+      const std::vector<FootPoseContactMeasurement>* poseContacts);
   void refreshEstimateFromSmoother();
   NavState currentBaseState() const { return optimizedBaseState_; }
   Key currentBaseKey() const { return MakeBaseKey(step_); }
@@ -476,6 +517,7 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   std::vector<bool> initialized_;
   std::vector<size_t> footEpisodes_;
   std::vector<std::optional<Key>> activeFootKeys_;
+  std::vector<bool> poseFoot_;
   NavState optimizedBaseState_;
   NavState deadReckonedState_;
   imuBias::ConstantBias biasEstimate_;
@@ -509,7 +551,8 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   /// Number of feet tracked by the smoother front-end.
   size_t numFeet() const { return numFeet_; }
 
-  /// Current estimate in the shared `ExtendedPose3d` layout.
+  /// Current estimate in the shared `ExtendedPose3d` layout. Pose anchors
+  /// contribute their world translations; foot attitudes are not exported.
   ExtendedPose3d estimate() const override;
 
   /// Return the current per-window bias estimate at the latest event.
@@ -533,6 +576,20 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) override;
 
+  /**
+   * Process the complete active set of physical-foot poses.
+   * Full-contact startup waits for all feet, retains the navigation prior,
+   * and uses each FK observation once. Terrain constraints are opt-in.
+   * A point/pose type change requires a new touchdown or an ended episode.
+   * @param activeContacts All active physical feet; omitted feet end contact.
+   * @throws std::invalid_argument for invalid measurements, covariances, or
+   *         a representation change within an existing contact episode.
+   */
+  void processPoseContacts(
+      const std::vector<FootPoseContactMeasurement>& activeContacts);
+
+  /// Unsupported for smoothers; throws std::invalid_argument. Use
+  /// processPoseContacts for rigid feet or processContacts for single points.
   void processCorrelatedContacts(
       const std::vector<CorrelatedFourPointContactMeasurement>&
           activeContactGroups) override;
@@ -543,8 +600,7 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
       const std::vector<bool>& activeFeet);
   void processContactPacket(
       std::vector<ContactMeasurement> sortedContacts,
-      const std::vector<CorrelatedFourPointContactMeasurement>*
-          correlatedGroups);
+      const std::vector<FootPoseContactMeasurement>* poseContacts);
   void refreshEstimateFromSmoother();
   NavState currentBaseState() const { return optimizedBaseState_; }
   Key currentPoseKey() const { return MakePoseKey(step_); }
@@ -585,6 +641,7 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   std::vector<bool> initialized_;
   std::vector<size_t> footEpisodes_;
   std::vector<std::optional<Key>> activeFootKeys_;
+  std::vector<bool> poseFoot_;
   NavState optimizedBaseState_;
   NavState deadReckonedState_;
   imuBias::ConstantBias biasEstimate_;

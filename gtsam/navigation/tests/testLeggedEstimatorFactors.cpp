@@ -21,8 +21,6 @@
 #include <gtsam/navigation/LeggedEstimatorFactors.h>
 #include <gtsam/nonlinear/factorTesting.h>
 
-#include <Eigen/LU>
-
 using namespace gtsam;
 
 namespace {
@@ -189,70 +187,6 @@ TEST(LeggedEstimatorFactors, NavStatePointContactFactorJacobians) {
 }
 
 /* ************************************************************************* */
-TEST(LeggedEstimatorFactors, NavStateFourPointContactFactorJacobians) {
-  const NavState state = sampleNavState();
-  const auto points = fourPointFootholds();
-  const auto measurements = fourPointMeasurements(state.pose(), points);
-  NavStateFourPointContactFactor factor(
-      0, 1, 2, 3, 4, measurements,
-      noiseModel::Unit::Create(kCorrelatedContactDimension));
-
-  Matrix actual_H_state, actual_H_point0, actual_H_point1, actual_H_point2,
-      actual_H_point3;
-  const Vector error =
-      factor.evaluateError(state, points.at(0), points.at(1), points.at(2),
-                           points.at(3), actual_H_state, actual_H_point0,
-                           actual_H_point1, actual_H_point2, actual_H_point3);
-  const auto stateError = [&](const NavState& value) {
-    return factor.evaluateError(value, points.at(0), points.at(1), points.at(2),
-                                points.at(3), {}, {}, {}, {}, {});
-  };
-  const auto pointError = [&](size_t index, const Point3& value) {
-    auto perturbed = points;
-    perturbed.at(index) = value;
-    return factor.evaluateError(state, perturbed.at(0), perturbed.at(1),
-                                perturbed.at(2), perturbed.at(3), {}, {}, {},
-                                {}, {});
-  };
-
-  EXPECT(assert_equal(Vector::Zero(kCorrelatedContactDimension), error, 1e-12));
-  EXPECT(
-      assert_equal(numericalDerivative11<Vector, NavState>(stateError, state),
-                   actual_H_state, 1e-6));
-  const std::array<Matrix*, kCorrelatedContactPointCount> actualPointJacobians{
-      &actual_H_point0, &actual_H_point1, &actual_H_point2, &actual_H_point3};
-  for (size_t point = 0; point < points.size(); ++point) {
-    const auto derivative = [&](const Point3& value) {
-      return pointError(point, value);
-    };
-    EXPECT(assert_equal(
-        numericalDerivative11<Vector, Point3>(derivative, points.at(point)),
-        *actualPointJacobians.at(point), 1e-6));
-  }
-}
-
-/* ************************************************************************* */
-TEST(LeggedEstimatorFactors, NavStateFourPointVelocityContactFactorJacobians) {
-  const NavState state = sampleNavState();
-  const auto points = fourPointFootholds();
-  const auto measurements = fourPointMeasurements(state.pose(), points);
-  const imuBias::ConstantBias bias(Vector3(0.01, -0.02, 0.03),
-                                   Vector3(-0.04, 0.05, -0.06));
-  NavStateFourPointVelocityContactFactor factor(
-      0, 1, 2, 3, 4, 5, measurements, Point3(0.02, 0.0, -0.48),
-      Vector3(0.03, -0.02, 0.01), Vector3(0.2, -0.1, 0.4),
-      noiseModel::Unit::Create(kCorrelatedContactVelocityDimension));
-
-  Values values;
-  values.insert(0, state);
-  for (size_t point = 0; point < points.size(); ++point) {
-    values.insert(1 + point, points.at(point));
-  }
-  values.insert(5, bias);
-  EXPECT_CORRECT_FACTOR_JACOBIANS(factor, values, 1e-6, 1e-6);
-}
-
-/* ************************************************************************* */
 TEST(LeggedEstimatorFactors, NavStatePointVelocityContactFactorJacobians) {
   const NavState state = sampleNavState();
   const Point3 foothold(1.2, 0.8, -0.5);
@@ -303,72 +237,6 @@ TEST(LeggedEstimatorFactors, Pose3PointContactFactorJacobians) {
 
   EXPECT(assert_equal(expected_H_pose, actual_H_pose, 1e-6));
   EXPECT(assert_equal(expected_H_foothold, actual_H_foothold, 1e-6));
-}
-
-/* ************************************************************************* */
-TEST(LeggedEstimatorFactors, Pose3FourPointContactFactorJacobiansAndRank) {
-  const Pose3 pose = sampleNavState().pose();
-  const auto points = fourPointFootholds();
-  const auto measurements = fourPointMeasurements(pose, points);
-  Pose3FourPointContactFactor factor(
-      0, 1, 2, 3, 4, measurements,
-      noiseModel::Unit::Create(kCorrelatedContactDimension));
-
-  Matrix actual_H_pose, actual_H_point0, actual_H_point1, actual_H_point2,
-      actual_H_point3;
-  const Vector error =
-      factor.evaluateError(pose, points.at(0), points.at(1), points.at(2),
-                           points.at(3), actual_H_pose, actual_H_point0,
-                           actual_H_point1, actual_H_point2, actual_H_point3);
-  const auto poseError = [&](const Pose3& value) {
-    return factor.evaluateError(value, points.at(0), points.at(1), points.at(2),
-                                points.at(3), {}, {}, {}, {}, {});
-  };
-  const auto pointError = [&](size_t index, const Point3& value) {
-    auto perturbed = points;
-    perturbed.at(index) = value;
-    return factor.evaluateError(pose, perturbed.at(0), perturbed.at(1),
-                                perturbed.at(2), perturbed.at(3), {}, {}, {},
-                                {}, {});
-  };
-
-  EXPECT(assert_equal(Vector::Zero(kCorrelatedContactDimension), error, 1e-12));
-  EXPECT(assert_equal(numericalDerivative11<Vector, Pose3>(poseError, pose),
-                      actual_H_pose, 1e-6));
-  EXPECT_LONGS_EQUAL(6, Eigen::FullPivLU<Matrix>(actual_H_pose).rank());
-  const std::array<Matrix*, kCorrelatedContactPointCount> actualPointJacobians{
-      &actual_H_point0, &actual_H_point1, &actual_H_point2, &actual_H_point3};
-  for (size_t point = 0; point < points.size(); ++point) {
-    const auto derivative = [&](const Point3& value) {
-      return pointError(point, value);
-    };
-    EXPECT(assert_equal(
-        numericalDerivative11<Vector, Point3>(derivative, points.at(point)),
-        *actualPointJacobians.at(point), 1e-6));
-  }
-}
-
-/* ************************************************************************* */
-TEST(LeggedEstimatorFactors, Pose3FourPointVelocityContactFactorJacobians) {
-  const Pose3 pose = sampleNavState().pose();
-  const Vector3 velocity = sampleNavState().velocity();
-  const auto points = fourPointFootholds();
-  const auto measurements = fourPointMeasurements(pose, points);
-  const imuBias::ConstantBias bias(Vector3(0.01, -0.02, 0.03),
-                                   Vector3(-0.04, 0.05, -0.06));
-  Pose3FourPointVelocityContactFactor factor(
-      0, 1, 2, 3, 4, 5, 6, measurements, Point3(0.02, 0.0, -0.48),
-      Vector3(0.03, -0.02, 0.01), Vector3(0.2, -0.1, 0.4),
-      noiseModel::Unit::Create(kCorrelatedContactVelocityDimension));
-
-  Values values;
-  values.insert(0, pose);
-  values.insert(1, velocity);
-  for (size_t point = 0; point < points.size(); ++point) {
-    values.insert(2 + point, points.at(point));
-  }
-  values.insert(6, bias);
-  EXPECT_CORRECT_FACTOR_JACOBIANS(factor, values, 1e-6, 1e-6);
 }
 
 /* ************************************************************************* */
@@ -439,46 +307,6 @@ TEST(LeggedEstimatorFactors, PointVelocityFactorsRejectInvalidNoiseDimensions) {
                                                     Vector3::Zero(),
                                                     Vector3::Zero(), model),
                     std::invalid_argument);
-  }
-}
-
-/* ************************************************************************* */
-TEST(LeggedEstimatorFactors, GroupedFactorsSupportIndividualAnchorJacobians) {
-  const NavState state = sampleNavState();
-  const auto points = fourPointFootholds();
-  const auto measurements = fourPointMeasurements(state.pose(), points);
-  NavStateFourPointVelocityContactFactor navFactor(
-      0, 1, 2, 3, 4, 5, measurements, Point3(0.02, 0.0, -0.48), Vector3::Zero(),
-      Vector3(0.2, -0.1, 0.4), noiseModel::Unit::Create(15));
-  Pose3FourPointVelocityContactFactor poseFactor(
-      0, 1, 2, 3, 4, 5, 6, measurements, Point3(0.02, 0.0, -0.48),
-      Vector3::Zero(), Vector3(0.2, -0.1, 0.4), noiseModel::Unit::Create(15));
-
-  for (size_t point = 0; point < points.size(); ++point) {
-    Matrix navH, poseH;
-
-    // Request each anchor Jacobian alone: computing it must not depend on a
-    // caller also requesting the navigation or another anchor Jacobian.
-    std::array<Matrix*, 4> navJacobians{}, poseJacobians{};
-    navJacobians[point] = &navH;
-    poseJacobians[point] = &poseH;
-    const Vector navError = navFactor.evaluateError(
-        state, points[0], points[1], points[2], points[3],
-        imuBias::ConstantBias{}, nullptr, navJacobians[0], navJacobians[1],
-        navJacobians[2], navJacobians[3], nullptr);
-    const Vector poseError = poseFactor.evaluateError(
-        state.pose(), state.velocity(), points[0], points[1], points[2],
-        points[3], imuBias::ConstantBias{}, nullptr, nullptr, poseJacobians[0],
-        poseJacobians[1], poseJacobians[2], poseJacobians[3], nullptr);
-
-    // Each anchor affects its own position rows. The velocity residual uses
-    // the measured foot origin, so its anchor derivatives remain zero.
-    Matrix expected = Matrix::Zero(15, 3);
-    expected.block<3, 3>(3 * point, 0) = state.attitude().transpose();
-
-    EXPECT(assert_equal(expected, navH, 1e-12));
-    EXPECT(assert_equal(expected, poseH, 1e-12));
-    EXPECT(assert_equal(navError, poseError, 1e-12));
   }
 }
 

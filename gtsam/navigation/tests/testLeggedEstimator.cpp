@@ -400,13 +400,13 @@ TEST(LeggedEstimator, PerContactCovarianceReachesAllFourCores) {
 }
 
 /* ************************************************************************* */
-TEST(LeggedEstimator, CorrelatedFourPointCovarianceReachesAllFourCores) {
+TEST(LeggedEstimator, CorrelatedFourPointCovarianceReachesBothFilters) {
   const LeggedEstimatorParams params = makeParams();
   const CorrelatedFourPointContactCovariance independent =
       correlatedFourPointCovariance(0.0);
   const CorrelatedFourPointContactCovariance correlated =
       correlatedFourPointCovariance(0.35);
-  for (size_t variant = 0; variant < 4; ++variant) {
+  for (size_t variant = 0; variant < 2; ++variant) {
     auto independentEstimator = makeFourPointEstimator(variant, params);
     auto correlatedEstimator = makeFourPointEstimator(variant, params);
 
@@ -487,7 +487,7 @@ TEST(LeggedEstimator, GroupedContactsLinearizeAfterAllHeightCorrections) {
 
 /* ************************************************************************* */
 TEST(LeggedEstimator,
-     CorrelatedFourPointVelocityMeasurementReachesAllFourCores) {
+     CorrelatedFourPointVelocityMeasurementReachesBothFilters) {
   const LeggedEstimatorParams params = makeParams();
   CorrelatedFourPointVelocityCovariance tight =
       CorrelatedFourPointVelocityCovariance::Identity() * 1e-8;
@@ -496,7 +496,7 @@ TEST(LeggedEstimator,
       correlatedFourPointCovariance(0.2);
   CorrelatedFourPointVelocityCovariance loose = tight;
   loose.bottomRightCorner<3, 3>() = I_3x3 * 1e2;
-  for (size_t variant = 0; variant < 4; ++variant) {
+  for (size_t variant = 0; variant < 2; ++variant) {
     auto tightEstimator = makeFourPointEstimator(variant, params);
     auto looseEstimator = makeFourPointEstimator(variant, params);
 
@@ -523,7 +523,7 @@ TEST(LeggedEstimator, RejectsMalformedCorrelatedFourPointPackets) {
   indefinite(0, 0) = -1.0;
 
   const LeggedEstimatorParams params = makeParams();
-  for (size_t variant = 0; variant < 4; ++variant) {
+  for (size_t variant = 0; variant < 2; ++variant) {
     for (const CorrelatedFourPointContactCovariance& covariance :
          {nonFinite, nonSymmetric, indefinite}) {
       auto estimator = makeFourPointEstimator(variant, params);
@@ -627,6 +627,7 @@ TEST(LeggedEstimator,
 
   for (size_t variant = 0; variant < 4; ++variant) {
     for (const bool grouped : {false, true}) {
+      if (grouped && variant >= 2) continue;
       auto reference = makeFourPointEstimator(variant, params);
       auto transformed = makeFourPointEstimator(variant, transformedParams);
       auto decorrelated = makeFourPointEstimator(variant, params);
@@ -1189,19 +1190,22 @@ TEST(LeggedEstimator, FixedLagCovarianceSurvivesMarginalizationAndTouchdown) {
                                             I_9x9 * 0.01, params, 0.15, {},
                                             engine);
     for (int step = 0; step < 12; ++step) {
-      for (LeggedEstimator* estimator :
-           {static_cast<LeggedEstimator*>(&ordinary),
-            static_cast<LeggedEstimator*>(&combined)}) {
-        estimator->predict(Vector3(0.01, -0.02, 0.005),
-                           Vector3(0.05, -0.03, 9.81), 0.1);
-        if (step % 4 == 2) {
-          estimator->processCorrelatedContacts({});
-        } else {
-          estimator->processCorrelatedContacts({fourPointVelocityContact(
-              CorrelatedFourPointVelocityCovariance::Identity() * 0.01,
-              step % 4 == 3, 0.0)});
-        }
+      const Vector3 omega(0.01, -0.02, 0.005);
+      const Vector3 acceleration(0.05, -0.03, 9.81);
+      ordinary.predict(omega, acceleration, 0.1);
+      combined.predict(omega, acceleration, 0.1);
+      std::vector<FootPoseContactMeasurement> contacts;
+      if (step % 4 != 2) {
+        FootPoseContactMeasurement contact;
+        contact.imuPFoot =
+            Pose3(Rot3::RzRyRx(0.1, 0.2, -0.1), Point3(0.02, 0.1, -0.48));
+        contact.touchdown = step % 4 == 3;
+        contact.velocity = FootPoseVelocityMeasurement{};
+        contact.velocity->covariance = I_9x9 * 0.01;
+        contacts.push_back(contact);
       }
+      ordinary.processPoseContacts(contacts);
+      combined.processPoseContacts(contacts);
 
       for (const Matrix& covariance : {ordinary.navigationStateCovariance(),
                                        combined.navigationStateCovariance()}) {
