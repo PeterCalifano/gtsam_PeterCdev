@@ -23,7 +23,7 @@ unstable_build=false
 use_expmap=true
 use_tangent_preintegr=true
 use_tbb=true
-use_march_native=true
+use_march_native=false
 install=false
 use_ninja=false
 no_optim=false
@@ -212,6 +212,8 @@ if [[ "$rebuild_only" == false ]]; then
     "-DGTSAM_ROT3_EXPMAP=$(bool_to_cmake "$use_expmap")"
     "-DGTSAM_BUILD_WITH_MARCH_NATIVE=$(bool_to_cmake "$use_march_native")"
     "-DCMAKE_INSTALL_PREFIX=$install_path"
+    '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+    -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=FALSE
   )
   [[ "$use_ninja"  == true ]] && cmake_args+=( -G Ninja )
   [[ "$no_optim"   == true ]] && cmake_args+=( -DNO_OPTIMIZATION=ON )
