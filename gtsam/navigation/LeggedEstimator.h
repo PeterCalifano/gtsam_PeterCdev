@@ -13,6 +13,7 @@
  * @file LeggedEstimator.h
  * @date February 2026
  * @author Frank Dellaert
+ * @author Pietro Califano (joint contacts and covariance extensions)
  */
 
 #pragma once
@@ -27,19 +28,93 @@
 #include <gtsam/navigation/PreintegrationParams.h>
 #include <gtsam/nonlinear/BatchFixedLagSmoother.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gtsam {
 
+inline constexpr size_t kCorrelatedContactPointCount = 4;
+inline constexpr size_t kCorrelatedContactDimension =
+    3 * kCorrelatedContactPointCount;
+inline constexpr size_t kCorrelatedContactVelocityDimension =
+    kCorrelatedContactDimension + 3;
+using CorrelatedFourPointContactCovariance =
+    Eigen::Matrix<double, kCorrelatedContactDimension,
+                  kCorrelatedContactDimension>;
+using CorrelatedFourPointVelocityCovariance =
+    Eigen::Matrix<double, kCorrelatedContactVelocityDimension,
+                  kCorrelatedContactVelocityDimension>;
+
+/**
+ * Point motion relative to the body, paired with a contact position.
+ * Vectors use body coordinates; angularVelocityBody is the raw gyro
+ * measurement. The joint covariance is for the IMU-frame residual [position,
+ * zero velocity], including their cross-covariance and any gyro uncertainty
+ * supplied by the caller. Point-velocity packets are rejected while
+ * full-contact initialization is pending.
+ */
+struct PointContactVelocityMeasurement {
+  Vector3 bodyPointVelocity = Vector3::Zero();
+  Vector3 angularVelocityBody = Vector3::Zero();
+  Matrix6 positionVelocityCovariance = Matrix6::Identity();
+};
+
+/**
+ * Zero-world-velocity information at a physical foot's frame origin.
+ * Position and velocity vectors use body coordinates; angularVelocityBody is
+ * raw. The IMU-frame residual covariance order is [point0, point1, point2,
+ * point3, foot-origin zero velocity]. Its leading 12-D block must equal the
+ * group's positionCovariance. The caller supplies gyro and position/velocity
+ * correlations.
+ */
+struct CorrelatedFourPointVelocityMeasurement {
+  Vector3 bodyPoint = Vector3::Zero();
+  Vector3 bodyPointVelocity = Vector3::Zero();
+  Vector3 angularVelocityBody = Vector3::Zero();
+  CorrelatedFourPointVelocityCovariance positionVelocityCovariance =
+      CorrelatedFourPointVelocityCovariance::Identity();
+};
+
 /// Body-frame contact measurement for one foot.
 struct ContactMeasurement {
+  ContactMeasurement() = default;
+  ContactMeasurement(
+      size_t footIndex, Vector3 measuredBodyPoint, bool isTouchdown = false,
+      std::optional<Matrix3> measuredPositionCovariance = std::nullopt,
+      std::optional<PointContactVelocityMeasurement> measuredPointVelocity =
+          std::nullopt)
+      : foot(footIndex),
+        bodyPoint(std::move(measuredBodyPoint)),
+        touchdown(isTouchdown),
+        positionCovariance(std::move(measuredPositionCovariance)),
+        pointVelocity(std::move(measuredPointVelocity)) {}
+
   size_t foot = 0;
   Vector3 bodyPoint = Vector3::Zero();
   /// True when this measurement corresponds to a new swing-to-stance touchdown.
   bool touchdown = false;
+  /// IMU-frame position-residual covariance; defaults to the configured value.
+  std::optional<Matrix3> positionCovariance;
+  /// Optional zero-world-velocity point measurement with a joint 6-D
+  /// covariance.
+  std::optional<PointContactVelocityMeasurement> pointVelocity;
+};
+
+/**
+ * One physical-foot update containing four jointly correlated point contacts.
+ * Points have strictly increasing indices and the same touchdown flag. Their
+ * individual covariance/velocity overrides must be empty. Covariance blocks
+ * follow point order and use IMU-frame residual coordinates.
+ */
+struct CorrelatedFourPointContactMeasurement {
+  std::array<ContactMeasurement, kCorrelatedContactPointCount> points;
+  CorrelatedFourPointContactCovariance positionCovariance =
+      CorrelatedFourPointContactCovariance::Identity();
+  std::optional<CorrelatedFourPointVelocityMeasurement> footOriginVelocity;
 };
 
 /// Common estimator parameters shared by all four variants.
@@ -67,6 +142,12 @@ struct LeggedEstimatorParams {
   bool marginalizeLeavingFoot = true;
 };
 
+/** Optimization engine used by the two fixed-lag estimator cores. */
+enum class LeggedFixedLagEngine {
+  Batch,
+  Incremental,
+};
+
 /// Common runtime interface shared by all four legged estimator variants.
 class GTSAM_EXPORT LeggedEstimator {
  public:
@@ -85,9 +166,26 @@ class GTSAM_EXPORT LeggedEstimator {
   virtual void predict(const Vector3& omegaBody,
                        const Vector3& specificForceBody, double dt) = 0;
 
-  /// Process the currently active contacts at the current estimator time.
+  /**
+   * Process the complete active contact set at the current estimator time.
+   * An omitted contact ends its stance episode. An explicit touchdown starts
+   * a new episode even if the contact was already active.
+   */
   virtual void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) = 0;
+
+  /**
+   * Process the active physical-foot groups at the current estimator time.
+   * Supply the complete active set, as for processContacts(). Point indices
+   * select state entries; their order within each group selects covariance
+   * rows.
+   * @throws std::invalid_argument for malformed measurements or covariances.
+   * @throws std::out_of_range for contact indices outside the configured state.
+   * @throws std::logic_error while full-contact initialization is pending.
+   */
+  virtual void processCorrelatedContacts(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups) = 0;
 
   /**
    * Return the current propagated estimate as `ExtendedPose3d`.
@@ -179,6 +277,10 @@ class GTSAM_EXPORT LeggedInvariantEKF : public LeftLinearEKF<ExtendedPose3d>,
   void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) override;
 
+  void processCorrelatedContacts(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups) override;
+
   /// Autonomous flow used by the left-linear prediction step.
   struct AutonomousFlow {
     /// Construct the autonomous-flow functor.
@@ -230,6 +332,9 @@ class GTSAM_EXPORT LeggedInvariantEKF : public LeftLinearEKF<ExtendedPose3d>,
   void marginalizeFoot(size_t foot);
   virtual void applyContactUpdate(
       const std::vector<ContactMeasurement>& activeContacts);
+  virtual void applyCorrelatedContactUpdate(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups);
   bool awaitingFullContactInitialization() const {
     return params_.useFullContactInitialization && !fullContactInitialized_;
   }
@@ -239,8 +344,11 @@ class GTSAM_EXPORT LeggedInvariantEKF : public LeftLinearEKF<ExtendedPose3d>,
       const std::vector<ContactMeasurement>& activeContacts,
       const std::vector<bool>& activeFeet);
   Covariance processNoise(double dt) const;
-  void applySingleContactUpdate(size_t foot, const Vector3& bodyPoint,
-                                const Matrix3& covariance);
+  void processContactPacket(
+      std::vector<ContactMeasurement> sortedContacts,
+      const std::vector<CorrelatedFourPointContactMeasurement>*
+          correlatedGroups);
+  void applySingleContactUpdate(const ContactMeasurement& contact);
   void applySingleHeightPrior(size_t foot, double terrainHeight);
 
   size_t numFeet_;
@@ -269,32 +377,28 @@ class GTSAM_EXPORT LeggedInvariantIEKF : public LeggedInvariantEKF {
  protected:
   void applyContactUpdate(
       const std::vector<ContactMeasurement>& activeContacts) override;
+  void applyCorrelatedContactUpdate(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups) override;
 };
 
 /**
  * Fixed-lag smoother over NavState and contact-episode footholds.
  *
- * The first two classes are single-step estimators that maintain one Gaussian
- * belief at the current time. This final variant instead builds a sliding
- * window over time using `BatchFixedLagSmoother`. Base states are created only
- * at contact events and are linked by preintegrated `ImuFactor2` motion
- * factors, while footholds are represented by contact-episode landmark
- * variables that are created on touchdown and naturally disappear once they
- * fall outside the lag window.
- *
- * This version is both a more realistic estimator for delayed multi-step
- * inference and an example of how the same measurement ideas can be expressed
- * in GTSAM as a smoother rather than as an EKF. It is deliberately kept in the
- * same file as the filter variants so users can read the progression from
- * sequential EKF, to local graph update, to fixed-lag smoothing in one place.
+ * Uses a batch or incremental fixed-lag engine. Base states are created at
+ * contact events and linked by preintegrated ImuFactor2 motion factors with one
+ * shared bias variable. Touchdown creates a contact-episode landmark; active
+ * landmarks stay in the window until contact ends and their timestamps expire.
  */
 class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
  public:
-  /// Construct the fixed-lag smoother variant.
-  LeggedFixedLagSmoother(const NavState& navState0, const Matrix& footholds0,
-                         const Matrix9& baseCovariance0,
-                         const LeggedEstimatorParams& params, double lagSeconds,
-                         const std::vector<std::string>& footNames = {});
+  /// Construct with full NavState-local (attitude, position, velocity)
+  /// covariance.
+  LeggedFixedLagSmoother(
+      const NavState& navState0, const Matrix& footholds0,
+      const Matrix9& baseCovariance0, const LeggedEstimatorParams& params,
+      double lagSeconds, const std::vector<std::string>& footNames = {},
+      LeggedFixedLagEngine engine = LeggedFixedLagEngine::Batch);
 
   /// Destroy the fixed-lag smoother variant.
   ~LeggedFixedLagSmoother() override;
@@ -308,6 +412,17 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   /// Return the current single shared IMU bias estimate.
   imuBias::ConstantBias estimateBias() const override { return biasEstimate_; }
 
+  /**
+   * Return the 15-D joint covariance at the latest optimized contact event.
+   * Order is [rotation, position, velocity, accelerometer bias, gyro bias],
+   * with NavState right-local coordinates for the first nine components.
+   * Includes all cross-blocks. Pending IMU samples do not propagate this
+   * covariance.
+   * @throws std::logic_error before graph initialization.
+   * @throws std::runtime_error if covariance extraction fails or is nonfinite.
+   */
+  Matrix navigationStateCovariance() const;
+
   /// Accumulate one IMU sample and advance the dead-reckoned estimate.
   void predict(const Vector3& omegaBody, const Vector3& specificForceBody,
                double dt) override;
@@ -316,10 +431,18 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) override;
 
+  void processCorrelatedContacts(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups) override;
+
  private:
   bool maybeInitializeFromFullContact(
       const std::vector<ContactMeasurement>& activeContacts,
       const std::vector<bool>& activeFeet);
+  void processContactPacket(
+      std::vector<ContactMeasurement> sortedContacts,
+      const std::vector<CorrelatedFourPointContactMeasurement>*
+          correlatedGroups);
   void refreshEstimateFromSmoother();
   NavState currentBaseState() const { return optimizedBaseState_; }
   Key currentBaseKey() const { return MakeBaseKey(step_); }
@@ -327,8 +450,9 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
     return Symbol('x', static_cast<uint64_t>(step));
   }
   static Key MakeBiasKey() { return Symbol('b', 0); }
-  static Key MakeFootKey(size_t foot, size_t episode) {
-    return Symbol('f', static_cast<uint64_t>(1000 * foot + episode));
+  Key MakeFootKey(size_t foot, size_t episode) const {
+    // Interleave feet so long-running contact episodes cannot share a key.
+    return Symbol('f', static_cast<uint64_t>(episode * numFeet_ + foot));
   }
   bool hasPendingImu() const { return pim_.deltaTij() > 0.0; }
   bool graphInitialized() const {
@@ -343,7 +467,8 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
   std::vector<std::string> footNames_;
   Matrix initialFootholds_;
   Matrix9 baseCovariance0_;
-  BatchFixedLagSmoother smoother_;
+  LeggedFixedLagEngine engine_;
+  std::unique_ptr<FixedLagSmoother> smoother_;
   PreintegratedImuMeasurements pim_;
   size_t step_ = 0;
   double currentTime_ = 0.0;
@@ -366,19 +491,17 @@ class GTSAM_EXPORT LeggedFixedLagSmoother : public LeggedEstimator {
  * stored as separate graph variables at each contact event, and the bias is
  * allowed to evolve with a random walk between events.
  *
- * In practice this is the smoother analogue of moving from a fixed,
- * subtractive IMU bias estimate to an explicitly estimated bias trajectory. It
- * serves as an example of how to upgrade a contact-event smoother from simple
- * preintegration with one shared bias key to combined preintegration with
- * per-event bias states.
+ * Supports the same batch and incremental fixed-lag engines.
  */
 class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
  public:
-  /// Construct the combined-IMU fixed-lag smoother variant.
+  /// Construct with full NavState-local covariance, including pose-velocity
+  /// cross blocks.
   LeggedCombinedFixedLagSmoother(
       const NavState& navState0, const Matrix& footholds0,
       const Matrix9& baseCovariance0, const LeggedEstimatorParams& params,
-      double lagSeconds, const std::vector<std::string>& footNames = {});
+      double lagSeconds, const std::vector<std::string>& footNames = {},
+      LeggedFixedLagEngine engine = LeggedFixedLagEngine::Batch);
 
   /// Destroy the combined-IMU fixed-lag smoother variant.
   ~LeggedCombinedFixedLagSmoother() override;
@@ -392,6 +515,16 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   /// Return the current per-window bias estimate at the latest event.
   imuBias::ConstantBias estimateBias() const override { return biasEstimate_; }
 
+  /**
+   * Return the latest optimized event's 15-D joint covariance, including all
+   * cross-blocks, in the same coordinates as
+   * LeggedFixedLagSmoother::navigationStateCovariance(). Pending IMU samples
+   * do not propagate this covariance.
+   * @throws std::logic_error before graph initialization.
+   * @throws std::runtime_error if covariance extraction fails or is nonfinite.
+   */
+  Matrix navigationStateCovariance() const;
+
   /// Accumulate one IMU sample and advance the dead-reckoned estimate.
   void predict(const Vector3& omegaBody, const Vector3& specificForceBody,
                double dt) override;
@@ -400,10 +533,18 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   void processContacts(
       const std::vector<ContactMeasurement>& activeContacts) override;
 
+  void processCorrelatedContacts(
+      const std::vector<CorrelatedFourPointContactMeasurement>&
+          activeContactGroups) override;
+
  private:
   bool maybeInitializeFromFullContact(
       const std::vector<ContactMeasurement>& activeContacts,
       const std::vector<bool>& activeFeet);
+  void processContactPacket(
+      std::vector<ContactMeasurement> sortedContacts,
+      const std::vector<CorrelatedFourPointContactMeasurement>*
+          correlatedGroups);
   void refreshEstimateFromSmoother();
   NavState currentBaseState() const { return optimizedBaseState_; }
   Key currentPoseKey() const { return MakePoseKey(step_); }
@@ -418,8 +559,9 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   static Key MakeBiasKey(size_t step) {
     return Symbol('b', static_cast<uint64_t>(step));
   }
-  static Key MakeFootKey(size_t foot, size_t episode) {
-    return Symbol('f', static_cast<uint64_t>(1000 * foot + episode));
+  Key MakeFootKey(size_t foot, size_t episode) const {
+    // Interleave feet so long-running contact episodes cannot share a key.
+    return Symbol('f', static_cast<uint64_t>(episode * numFeet_ + foot));
   }
   bool hasPendingImu() const { return pim_.deltaTij() > 0.0; }
   bool graphInitialized() const {
@@ -434,7 +576,8 @@ class GTSAM_EXPORT LeggedCombinedFixedLagSmoother : public LeggedEstimator {
   std::vector<std::string> footNames_;
   Matrix initialFootholds_;
   Matrix9 baseCovariance0_;
-  BatchFixedLagSmoother smoother_;
+  LeggedFixedLagEngine engine_;
+  std::unique_ptr<FixedLagSmoother> smoother_;
   PreintegratedCombinedMeasurements pim_;
   size_t step_ = 0;
   double currentTime_ = 0.0;

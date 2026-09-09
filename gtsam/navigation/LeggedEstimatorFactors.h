@@ -11,15 +11,28 @@
 
 /**
  * @file LeggedEstimatorFactors.h
+ * @brief Contact residuals for ExtendedPose3, NavState, and split pose/velocity
+ * states.
+ *
+ * Factor measurements and residual covariances use IMU coordinates. Position
+ * residuals are R^T(f - p) - q; zero-velocity residuals are
+ * R^T v + (omega - b_g) x q + q_dot. Grouped velocity factors use the foot
+ * origin for q and q_dot and append one velocity residual to four positions.
+ * ExtendedPose3 factors take bias-corrected angular velocity; the other
+ * velocity factors estimate the gyro bias through a separate bias key.
  * @date February 2026
  * @author Frank Dellaert
+ * @author Pietro Califano (joint contact factors)
  */
-  
+
 #pragma once
 
 #include <gtsam/base/Matrix.h>
 #include <gtsam/navigation/LeggedEstimator.h>
 #include <gtsam/nonlinear/NoiseModelFactorN.h>
+
+#include <memory>
+#include <stdexcept>
 
 namespace gtsam {
 
@@ -49,7 +62,8 @@ inline Vector3 extendedPoseContactPrediction(const ExtendedPose3d& state,
   Matrix36 prediction_H_pose;
   const Pose3 pose(state.rotation(), state.x(0));
   const Point3 foothold = state.x(footColumn);
-  const Vector3 prediction = pose.transformTo(foothold, prediction_H_pose);
+  const Vector3 prediction =
+      pose.transformTo(foothold, H ? &prediction_H_pose : nullptr);
 
   if (H) {
     H->setZero(3, static_cast<Eigen::Index>(state.dim()));
@@ -92,6 +106,194 @@ class ExtendedPoseContactFactor : public NoiseModelFactorN<ExtendedPose3d> {
  private:
   size_t footColumn_;
   Point3 measurement_;
+};
+
+/**
+ * Joint four-point contact factor for an ExtendedPose3 state.
+ * Stack the four 3-D residuals in measurement order so one 12-D noise model
+ * whitens them together, including correlations between contact points.
+ */
+class ExtendedPoseFourPointContactFactor
+    : public NoiseModelFactorN<ExtendedPose3d> {
+  using Base = NoiseModelFactorN<ExtendedPose3d>;
+
+ public:
+  using Base::evaluateError;
+  using FootColumns = std::array<size_t, kCorrelatedContactPointCount>;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  ExtendedPoseFourPointContactFactor(Key key, FootColumns footColumns,
+                                     Measurements measurements,
+                                     const SharedNoiseModel& model)
+      : Base(model, key),
+        footColumns_(std::move(footColumns)),
+        measurements_(std::move(measurements)) {
+    if (!model || model->dim() != kCorrelatedContactDimension) {
+      throw std::invalid_argument(
+          "ExtendedPoseFourPointContactFactor requires a 12-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<ExtendedPoseFourPointContactFactor>(*this);
+  }
+
+  Vector evaluateError(const ExtendedPose3d& state,
+                       OptionalMatrixType H) const override {
+    Vector error(kCorrelatedContactDimension);
+    if (H) {
+      H->setZero(kCorrelatedContactDimension,
+                 static_cast<Eigen::Index>(state.dim()));
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      Matrix point_H_state;
+      const Vector3 prediction = extendedPoseContactPrediction(
+          state, footColumns_.at(point), H ? &point_H_state : nullptr);
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) = prediction - measurements_.at(point);
+      if (H) {
+        H->middleRows(row, 3) = point_H_state;
+      }
+    }
+    return error;
+  }
+
+ private:
+  FootColumns footColumns_;
+  Measurements measurements_;
+};
+
+/**
+ * Four correlated point positions plus one foot-origin velocity residual.
+ * The final three rows constrain the measured foot origin, which can differ
+ * from all four contact points. Angular velocity is a bias-corrected input.
+ */
+class ExtendedPoseFourPointVelocityContactFactor
+    : public NoiseModelFactorN<ExtendedPose3d> {
+  using Base = NoiseModelFactorN<ExtendedPose3d>;
+
+ public:
+  using Base::evaluateError;
+  using FootColumns = std::array<size_t, kCorrelatedContactPointCount>;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  ExtendedPoseFourPointVelocityContactFactor(
+      Key key, FootColumns footColumns, Measurements measurements,
+      const Point3& footOriginMeasurement,
+      const Vector3& measuredFootOriginVelocity,
+      const Vector3& correctedAngularVelocity, const SharedNoiseModel& model)
+      : Base(model, key),
+        footColumns_(std::move(footColumns)),
+        measurements_(std::move(measurements)),
+        footOriginMeasurement_(footOriginMeasurement),
+        measuredFootOriginVelocity_(measuredFootOriginVelocity),
+        correctedAngularVelocity_(correctedAngularVelocity) {
+    if (!model || model->dim() != kCorrelatedContactVelocityDimension) {
+      throw std::invalid_argument(
+          "ExtendedPoseFourPointVelocityContactFactor requires a 15-D noise "
+          "model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<ExtendedPoseFourPointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const ExtendedPose3d& state,
+                       OptionalMatrixType H) const override {
+    Vector error(kCorrelatedContactVelocityDimension);
+    if (H) {
+      H->setZero(kCorrelatedContactVelocityDimension,
+                 static_cast<Eigen::Index>(state.dim()));
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      Matrix point_H_state;
+      const Vector3 prediction = extendedPoseContactPrediction(
+          state, footColumns_.at(point), H ? &point_H_state : nullptr);
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) = prediction - measurements_.at(point);
+      if (H) {
+        H->middleRows(row, 3) = point_H_state;
+      }
+    }
+
+    Matrix39 velocity_H_navState;
+    const NavState navState(state.rotation(), state.x(0), state.x(1));
+    const Vector3 bodyVelocity =
+        navState.bodyVelocity(H ? &velocity_H_navState : nullptr);
+    if (H) {
+      H->block(12, 0, 3, 9) = velocity_H_navState;
+    }
+    error.tail<3>() = bodyVelocity +
+                      correctedAngularVelocity_.cross(footOriginMeasurement_) +
+                      measuredFootOriginVelocity_;
+    return error;
+  }
+
+ private:
+  FootColumns footColumns_;
+  Measurements measurements_;
+  Point3 footOriginMeasurement_;
+  Vector3 measuredFootOriginVelocity_;
+  Vector3 correctedAngularVelocity_;
+};
+
+/** Joint point-position and zero-world-velocity factor for ExtendedPose3. */
+class ExtendedPosePointVelocityContactFactor
+    : public NoiseModelFactorN<ExtendedPose3d> {
+  using Base = NoiseModelFactorN<ExtendedPose3d>;
+
+ public:
+  using Base::evaluateError;
+
+  ExtendedPosePointVelocityContactFactor(
+      Key key, size_t footColumn, const Point3& measurement,
+      const Vector3& measuredPointVelocity,
+      const Vector3& correctedAngularVelocity, const SharedNoiseModel& model)
+      : Base(model, key),
+        footColumn_(footColumn),
+        measurement_(measurement),
+        measuredPointVelocity_(measuredPointVelocity),
+        correctedAngularVelocity_(correctedAngularVelocity) {
+    if (!model || model->dim() != 6) {
+      throw std::invalid_argument(
+          "ExtendedPosePointVelocityContactFactor requires a 6-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<ExtendedPosePointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const ExtendedPose3d& state,
+                       OptionalMatrixType H) const override {
+    Matrix position_H_state;
+    const Vector3 predictedPoint = extendedPoseContactPrediction(
+        state, footColumn_, H ? &position_H_state : nullptr);
+    Matrix39 velocity_H_navState;
+    const NavState navState(state.rotation(), state.x(0), state.x(1));
+    const Vector3 bodyVelocity =
+        navState.bodyVelocity(H ? &velocity_H_navState : nullptr);
+
+    if (H) {
+      H->setZero(6, static_cast<Eigen::Index>(state.dim()));
+      H->topRows<3>() = position_H_state;
+      H->block(3, 0, 3, 9) = velocity_H_navState;
+    }
+
+    Vector6 error;
+    error.head<3>() = predictedPoint - measurement_;
+    error.tail<3>() = bodyVelocity +
+                      correctedAngularVelocity_.cross(measurement_) +
+                      measuredPointVelocity_;
+    return error;
+  }
+
+ private:
+  size_t footColumn_;
+  Point3 measurement_;
+  Vector3 measuredPointVelocity_;
+  Vector3 correctedAngularVelocity_;
 };
 
 /// Height factor for the `ExtendedPose3(2+k)` graph-update variant.
@@ -175,6 +377,242 @@ class NavStatePointContactFactor : public NoiseModelFactorN<NavState, Point3> {
   Point3 measurement_;
 };
 
+/** Joint four-point contact factor between NavState and four point anchors. */
+class NavStateFourPointContactFactor
+    : public NoiseModelFactorN<NavState, Point3, Point3, Point3, Point3> {
+  using Base = NoiseModelFactorN<NavState, Point3, Point3, Point3, Point3>;
+
+ public:
+  using Base::evaluateError;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  NavStateFourPointContactFactor(Key navKey, Key point0Key, Key point1Key,
+                                 Key point2Key, Key point3Key,
+                                 Measurements measurements,
+                                 const SharedNoiseModel& model)
+      : Base(model, navKey, point0Key, point1Key, point2Key, point3Key),
+        measurements_(std::move(measurements)) {
+    if (!model || model->dim() != kCorrelatedContactDimension) {
+      throw std::invalid_argument(
+          "NavStateFourPointContactFactor requires a 12-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<NavStateFourPointContactFactor>(*this);
+  }
+
+  Vector evaluateError(const NavState& navState, const Point3& point0,
+                       const Point3& point1, const Point3& point2,
+                       const Point3& point3, OptionalMatrixType H1,
+                       OptionalMatrixType H2, OptionalMatrixType H3,
+                       OptionalMatrixType H4,
+                       OptionalMatrixType H5) const override {
+    const std::array<const Point3*, kCorrelatedContactPointCount> points{
+        &point0, &point1, &point2, &point3};
+    std::array<Matrix36, kCorrelatedContactPointCount> point_H_pose;
+    std::array<Matrix3, kCorrelatedContactPointCount> point_H_anchor;
+    const std::array<OptionalMatrixType, kCorrelatedContactPointCount>
+        anchorJacobians{H2, H3, H4, H5};
+    Vector error(kCorrelatedContactDimension);
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) =
+          navState.pose().transformTo(
+              *points.at(point), H1 ? &point_H_pose.at(point) : nullptr,
+              anchorJacobians.at(point) ? &point_H_anchor.at(point) : nullptr) -
+          measurements_.at(point);
+    }
+
+    if (H1) {
+      H1->setZero(kCorrelatedContactDimension, 9);
+      for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        H1->block(row, 0, 3, 6) = point_H_pose.at(point);
+      }
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      if (anchorJacobians.at(point)) {
+        anchorJacobians.at(point)->setZero(kCorrelatedContactDimension, 3);
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        anchorJacobians.at(point)->block(row, 0, 3, 3) =
+            point_H_anchor.at(point);
+      }
+    }
+    return error;
+  }
+
+ private:
+  Measurements measurements_;
+};
+
+/** Four correlated positions plus foot-origin velocity for a NavState. */
+class NavStateFourPointVelocityContactFactor
+    : public NoiseModelFactorN<NavState, Point3, Point3, Point3, Point3,
+                               imuBias::ConstantBias> {
+  using Base = NoiseModelFactorN<NavState, Point3, Point3, Point3, Point3,
+                                 imuBias::ConstantBias>;
+
+ public:
+  using Base::evaluateError;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  NavStateFourPointVelocityContactFactor(
+      Key navKey, Key point0Key, Key point1Key, Key point2Key, Key point3Key,
+      Key biasKey, Measurements measurements,
+      const Point3& footOriginMeasurement,
+      const Vector3& measuredFootOriginVelocity,
+      const Vector3& measuredAngularVelocity, const SharedNoiseModel& model)
+      : Base(model, navKey, point0Key, point1Key, point2Key, point3Key,
+             biasKey),
+        measurements_(std::move(measurements)),
+        footOriginMeasurement_(footOriginMeasurement),
+        measuredFootOriginVelocity_(measuredFootOriginVelocity),
+        measuredAngularVelocity_(measuredAngularVelocity) {
+    if (!model || model->dim() != kCorrelatedContactVelocityDimension) {
+      throw std::invalid_argument(
+          "NavStateFourPointVelocityContactFactor requires a 15-D noise "
+          "model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<NavStateFourPointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const NavState& navState, const Point3& point0,
+                       const Point3& point1, const Point3& point2,
+                       const Point3& point3, const imuBias::ConstantBias& bias,
+                       OptionalMatrixType H1, OptionalMatrixType H2,
+                       OptionalMatrixType H3, OptionalMatrixType H4,
+                       OptionalMatrixType H5,
+                       OptionalMatrixType H6) const override {
+    const std::array<const Point3*, kCorrelatedContactPointCount> points{
+        &point0, &point1, &point2, &point3};
+    std::array<Matrix36, kCorrelatedContactPointCount> point_H_pose;
+    std::array<Matrix3, kCorrelatedContactPointCount> point_H_anchor;
+    const std::array<OptionalMatrixType, kCorrelatedContactPointCount>
+        anchorJacobians{H2, H3, H4, H5};
+    Vector error(kCorrelatedContactVelocityDimension);
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) =
+          navState.pose().transformTo(
+              *points.at(point), H1 ? &point_H_pose.at(point) : nullptr,
+              anchorJacobians.at(point) ? &point_H_anchor.at(point) : nullptr) -
+          measurements_.at(point);
+    }
+
+    Matrix39 velocity_H_navState;
+    const Vector3 bodyVelocity =
+        navState.bodyVelocity(H1 ? &velocity_H_navState : nullptr);
+    if (H1) {
+      H1->setZero(kCorrelatedContactVelocityDimension, 9);
+      for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        H1->block(row, 0, 3, 6) = point_H_pose.at(point);
+      }
+      H1->bottomRows<3>() = velocity_H_navState;
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      if (anchorJacobians.at(point)) {
+        anchorJacobians.at(point)->setZero(kCorrelatedContactVelocityDimension,
+                                           3);
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        anchorJacobians.at(point)->block(row, 0, 3, 3) =
+            point_H_anchor.at(point);
+      }
+    }
+    if (H6) {
+      // Bias order is (accelerometer, gyroscope). Differentiating
+      // (omega - bg) x q gives +skew(q) in the gyroscope columns.
+      H6->setZero(kCorrelatedContactVelocityDimension, 6);
+      H6->block<3, 3>(12, 3) = skewSymmetric(footOriginMeasurement_);
+    }
+
+    error.tail<3>() = bodyVelocity +
+                      (measuredAngularVelocity_ - bias.gyroscope())
+                          .cross(footOriginMeasurement_) +
+                      measuredFootOriginVelocity_;
+    return error;
+  }
+
+ private:
+  Measurements measurements_;
+  Point3 footOriginMeasurement_;
+  Vector3 measuredFootOriginVelocity_;
+  Vector3 measuredAngularVelocity_;
+};
+
+/** Joint point-position and zero-world-velocity factor for NavState. */
+class NavStatePointVelocityContactFactor
+    : public NoiseModelFactorN<NavState, Point3, imuBias::ConstantBias> {
+  using Base = NoiseModelFactorN<NavState, Point3, imuBias::ConstantBias>;
+
+ public:
+  using Base::evaluateError;
+
+  NavStatePointVelocityContactFactor(Key navKey, Key pointKey, Key biasKey,
+                                     const Point3& measurement,
+                                     const Vector3& measuredPointVelocity,
+                                     const Vector3& measuredAngularVelocity,
+                                     const SharedNoiseModel& model)
+      : Base(model, navKey, pointKey, biasKey),
+        measurement_(measurement),
+        measuredPointVelocity_(measuredPointVelocity),
+        measuredAngularVelocity_(measuredAngularVelocity) {
+    if (!model || model->dim() != 6) {
+      throw std::invalid_argument(
+          "NavStatePointVelocityContactFactor requires a 6-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<NavStatePointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const NavState& navState, const Point3& foothold,
+                       const imuBias::ConstantBias& bias, OptionalMatrixType H1,
+                       OptionalMatrixType H2,
+                       OptionalMatrixType H3) const override {
+    Matrix36 position_H_pose;
+    Matrix3 position_H_foothold;
+    const Vector3 predictedPoint =
+        navState.pose().transformTo(foothold, H1 ? &position_H_pose : nullptr,
+                                    H2 ? &position_H_foothold : nullptr);
+    Matrix39 velocity_H_navState;
+    const Vector3 bodyVelocity =
+        navState.bodyVelocity(H1 ? &velocity_H_navState : nullptr);
+
+    if (H1) {
+      H1->setZero(6, 9);
+      H1->block(0, 0, 3, 6) = position_H_pose;
+      H1->bottomRows<3>() = velocity_H_navState;
+    }
+    if (H2) {
+      H2->setZero(6, 3);
+      H2->topRows<3>() = position_H_foothold;
+    }
+    if (H3) {
+      H3->setZero(6, 6);
+      H3->block<3, 3>(3, 3) = skewSymmetric(measurement_);
+    }
+
+    Vector6 error;
+    error.head<3>() = predictedPoint - measurement_;
+    error.tail<3>() =
+        bodyVelocity +
+        (measuredAngularVelocity_ - bias.gyroscope()).cross(measurement_) +
+        measuredPointVelocity_;
+    return error;
+  }
+
+ private:
+  Point3 measurement_;
+  Vector3 measuredPointVelocity_;
+  Vector3 measuredAngularVelocity_;
+};
+
 /// Contact factor between a Pose3 and a foothold point variable.
 class Pose3PointContactFactor : public NoiseModelFactorN<Pose3, Point3> {
   using Base = NoiseModelFactorN<Pose3, Point3>;
@@ -202,6 +640,260 @@ class Pose3PointContactFactor : public NoiseModelFactorN<Pose3, Point3> {
 
  private:
   Point3 measurement_;
+};
+
+/** Joint four-point contact factor between Pose3 and four point anchors. */
+class Pose3FourPointContactFactor
+    : public NoiseModelFactorN<Pose3, Point3, Point3, Point3, Point3> {
+  using Base = NoiseModelFactorN<Pose3, Point3, Point3, Point3, Point3>;
+
+ public:
+  using Base::evaluateError;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  Pose3FourPointContactFactor(Key poseKey, Key point0Key, Key point1Key,
+                              Key point2Key, Key point3Key,
+                              Measurements measurements,
+                              const SharedNoiseModel& model)
+      : Base(model, poseKey, point0Key, point1Key, point2Key, point3Key),
+        measurements_(std::move(measurements)) {
+    if (!model || model->dim() != kCorrelatedContactDimension) {
+      throw std::invalid_argument(
+          "Pose3FourPointContactFactor requires a 12-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<Pose3FourPointContactFactor>(*this);
+  }
+
+  Vector evaluateError(const Pose3& pose, const Point3& point0,
+                       const Point3& point1, const Point3& point2,
+                       const Point3& point3, OptionalMatrixType H1,
+                       OptionalMatrixType H2, OptionalMatrixType H3,
+                       OptionalMatrixType H4,
+                       OptionalMatrixType H5) const override {
+    const std::array<const Point3*, kCorrelatedContactPointCount> points{
+        &point0, &point1, &point2, &point3};
+    std::array<Matrix36, kCorrelatedContactPointCount> point_H_pose;
+    std::array<Matrix3, kCorrelatedContactPointCount> point_H_anchor;
+    const std::array<OptionalMatrixType, kCorrelatedContactPointCount>
+        anchorJacobians{H2, H3, H4, H5};
+    Vector error(kCorrelatedContactDimension);
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) =
+          pose.transformTo(
+              *points.at(point), H1 ? &point_H_pose.at(point) : nullptr,
+              anchorJacobians.at(point) ? &point_H_anchor.at(point) : nullptr) -
+          measurements_.at(point);
+    }
+
+    if (H1) {
+      H1->setZero(kCorrelatedContactDimension, 6);
+      for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        H1->middleRows(row, 3) = point_H_pose.at(point);
+      }
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      if (anchorJacobians.at(point)) {
+        anchorJacobians.at(point)->setZero(kCorrelatedContactDimension, 3);
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        anchorJacobians.at(point)->block(row, 0, 3, 3) =
+            point_H_anchor.at(point);
+      }
+    }
+    return error;
+  }
+
+ private:
+  Measurements measurements_;
+};
+
+/** Four correlated positions plus foot-origin velocity for split state. */
+class Pose3FourPointVelocityContactFactor
+    : public NoiseModelFactorN<Pose3, Vector3, Point3, Point3, Point3, Point3,
+                               imuBias::ConstantBias> {
+  using Base = NoiseModelFactorN<Pose3, Vector3, Point3, Point3, Point3, Point3,
+                                 imuBias::ConstantBias>;
+
+ public:
+  using Base::evaluateError;
+  using Measurements = std::array<Point3, kCorrelatedContactPointCount>;
+
+  Pose3FourPointVelocityContactFactor(Key poseKey, Key velocityKey,
+                                      Key point0Key, Key point1Key,
+                                      Key point2Key, Key point3Key, Key biasKey,
+                                      Measurements measurements,
+                                      const Point3& footOriginMeasurement,
+                                      const Vector3& measuredFootOriginVelocity,
+                                      const Vector3& measuredAngularVelocity,
+                                      const SharedNoiseModel& model)
+      : Base(model, poseKey, velocityKey, point0Key, point1Key, point2Key,
+             point3Key, biasKey),
+        measurements_(std::move(measurements)),
+        footOriginMeasurement_(footOriginMeasurement),
+        measuredFootOriginVelocity_(measuredFootOriginVelocity),
+        measuredAngularVelocity_(measuredAngularVelocity) {
+    if (!model || model->dim() != kCorrelatedContactVelocityDimension) {
+      throw std::invalid_argument(
+          "Pose3FourPointVelocityContactFactor requires a 15-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<Pose3FourPointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const Pose3& pose, const Vector3& velocity,
+                       const Point3& point0, const Point3& point1,
+                       const Point3& point2, const Point3& point3,
+                       const imuBias::ConstantBias& bias, OptionalMatrixType H1,
+                       OptionalMatrixType H2, OptionalMatrixType H3,
+                       OptionalMatrixType H4, OptionalMatrixType H5,
+                       OptionalMatrixType H6,
+                       OptionalMatrixType H7) const override {
+    const std::array<const Point3*, kCorrelatedContactPointCount> points{
+        &point0, &point1, &point2, &point3};
+    std::array<Matrix36, kCorrelatedContactPointCount> point_H_pose;
+    std::array<Matrix3, kCorrelatedContactPointCount> point_H_anchor;
+    const std::array<OptionalMatrixType, kCorrelatedContactPointCount>
+        anchorJacobians{H3, H4, H5, H6};
+    Vector error(kCorrelatedContactVelocityDimension);
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+      error.segment<3>(row) =
+          pose.transformTo(
+              *points.at(point), H1 ? &point_H_pose.at(point) : nullptr,
+              anchorJacobians.at(point) ? &point_H_anchor.at(point) : nullptr) -
+          measurements_.at(point);
+    }
+
+    // The separate velocity key is world-frame; the residual uses IMU-frame
+    // velocity. Its Jacobians therefore include both rotation and velocity.
+    Matrix3 velocity_H_rotation;
+    Matrix3 velocity_H_worldVelocity;
+    const Vector3 bodyVelocity =
+        pose.rotation().unrotate(velocity, H1 ? &velocity_H_rotation : nullptr,
+                                 H2 ? &velocity_H_worldVelocity : nullptr);
+    if (H1) {
+      H1->setZero(kCorrelatedContactVelocityDimension, 6);
+      for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        H1->middleRows(row, 3) = point_H_pose.at(point);
+      }
+      H1->block<3, 3>(12, 0) = velocity_H_rotation;
+    }
+    if (H2) {
+      H2->setZero(kCorrelatedContactVelocityDimension, 3);
+      H2->bottomRows<3>() = velocity_H_worldVelocity;
+    }
+    for (size_t point = 0; point < kCorrelatedContactPointCount; ++point) {
+      if (anchorJacobians.at(point)) {
+        anchorJacobians.at(point)->setZero(kCorrelatedContactVelocityDimension,
+                                           3);
+        const Eigen::Index row = 3 * static_cast<Eigen::Index>(point);
+        anchorJacobians.at(point)->block(row, 0, 3, 3) =
+            point_H_anchor.at(point);
+      }
+    }
+    if (H7) {
+      // The foot origin is a measurement, so these velocity rows have no
+      // landmark dependence; only the gyro bias enters the angular-rate term.
+      H7->setZero(kCorrelatedContactVelocityDimension, 6);
+      H7->block<3, 3>(12, 3) = skewSymmetric(footOriginMeasurement_);
+    }
+
+    error.tail<3>() = bodyVelocity +
+                      (measuredAngularVelocity_ - bias.gyroscope())
+                          .cross(footOriginMeasurement_) +
+                      measuredFootOriginVelocity_;
+    return error;
+  }
+
+ private:
+  Measurements measurements_;
+  Point3 footOriginMeasurement_;
+  Vector3 measuredFootOriginVelocity_;
+  Vector3 measuredAngularVelocity_;
+};
+
+/** Joint point-position and zero-world-velocity factor for split navigation
+ * state. */
+class Pose3PointVelocityContactFactor
+    : public NoiseModelFactorN<Pose3, Vector3, Point3, imuBias::ConstantBias> {
+  using Base = NoiseModelFactorN<Pose3, Vector3, Point3, imuBias::ConstantBias>;
+
+ public:
+  using Base::evaluateError;
+
+  Pose3PointVelocityContactFactor(Key poseKey, Key velocityKey, Key pointKey,
+                                  Key biasKey, const Point3& measurement,
+                                  const Vector3& measuredPointVelocity,
+                                  const Vector3& measuredAngularVelocity,
+                                  const SharedNoiseModel& model)
+      : Base(model, poseKey, velocityKey, pointKey, biasKey),
+        measurement_(measurement),
+        measuredPointVelocity_(measuredPointVelocity),
+        measuredAngularVelocity_(measuredAngularVelocity) {
+    if (!model || model->dim() != 6) {
+      throw std::invalid_argument(
+          "Pose3PointVelocityContactFactor requires a 6-D noise model.");
+    }
+  }
+
+  NonlinearFactor::shared_ptr clone() const override {
+    return std::make_shared<Pose3PointVelocityContactFactor>(*this);
+  }
+
+  Vector evaluateError(const Pose3& pose, const Vector3& velocity,
+                       const Point3& foothold,
+                       const imuBias::ConstantBias& bias, OptionalMatrixType H1,
+                       OptionalMatrixType H2, OptionalMatrixType H3,
+                       OptionalMatrixType H4) const override {
+    Matrix36 position_H_pose;
+    Matrix3 position_H_foothold;
+    const Vector3 predictedPoint =
+        pose.transformTo(foothold, H1 ? &position_H_pose : nullptr,
+                         H3 ? &position_H_foothold : nullptr);
+    Matrix3 velocity_H_rotation;
+    Matrix3 velocity_H_worldVelocity;
+    const Vector3 bodyVelocity =
+        pose.rotation().unrotate(velocity, H1 ? &velocity_H_rotation : nullptr,
+                                 H2 ? &velocity_H_worldVelocity : nullptr);
+
+    if (H1) {
+      H1->setZero(6, 6);
+      H1->topRows<3>() = position_H_pose;
+      H1->block<3, 3>(3, 0) = velocity_H_rotation;
+    }
+    if (H2) {
+      H2->setZero(6, 3);
+      H2->bottomRows<3>() = velocity_H_worldVelocity;
+    }
+    if (H3) {
+      H3->setZero(6, 3);
+      H3->topRows<3>() = position_H_foothold;
+    }
+    if (H4) {
+      H4->setZero(6, 6);
+      H4->block<3, 3>(3, 3) = skewSymmetric(measurement_);
+    }
+
+    Vector6 error;
+    error.head<3>() = predictedPoint - measurement_;
+    error.tail<3>() =
+        bodyVelocity +
+        (measuredAngularVelocity_ - bias.gyroscope()).cross(measurement_) +
+        measuredPointVelocity_;
+    return error;
+  }
+
+ private:
+  Point3 measurement_;
+  Vector3 measuredPointVelocity_;
+  Vector3 measuredAngularVelocity_;
 };
 
 /// Height factor on a standalone foothold point variable.
